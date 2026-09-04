@@ -42,9 +42,30 @@ public class AutomationListener {
     @Value("${automation.enabled:false}")
     private boolean enabled;
 
+    /**
+     * A change announced from inside a transaction, by a service that knows what an update
+     * <em>means</em> — approved, rejected, closed. Field changes do not come this way; see
+     * {@link #onCommittedChange}.
+     */
     @Async(AutomationAsyncConfig.EXECUTOR)
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     public void onEntityChanged(EntityChangedEvent event) {
+        handle(event);
+    }
+
+    /**
+     * A change the {@code capture} package observed and published once the transaction had
+     * committed. It needs a plain listener rather than a transactional one because there is no
+     * longer a transaction at that point — the reason
+     * {@link CommittedEntityChange} exists as its own type at all.
+     */
+    @Async(AutomationAsyncConfig.EXECUTOR)
+    @org.springframework.context.event.EventListener
+    public void onCommittedChange(CommittedEntityChange committed) {
+        handle(committed.event());
+    }
+
+    private void handle(EntityChangedEvent event) {
         if (!enabled) {
             return;
         }

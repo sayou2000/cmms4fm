@@ -48,7 +48,47 @@ public class RuleEvaluator {
             case IS_NOT -> !Objects.equals(asText(actual), expected);
             case CONTAINS -> actual != null && expected != null && asText(actual).contains(expected);
             case CHANGED_TO -> changedTo(condition, context, actual, expected);
+            case IS_SET -> actual != null && !asText(actual).isBlank();
+            case IS_NOT_SET -> actual == null || asText(actual).isBlank();
+            case LT, LTE, GT, GTE -> comparesNumerically(condition, actual, expected);
         };
+    }
+
+    /**
+     * Numeric comparison, with the two ways it can be meaningless kept apart.
+     *
+     * <p>A <b>missing</b> value is an ordinary answer — an asset with no purchase price is not a
+     * broken rule — and it satisfies no comparison, not even {@code LTE}. Treating null as zero
+     * is the tempting shortcut and it is how "warranty expired" would fire for every asset that
+     * has no warranty date at all.
+     *
+     * <p>A value that is <b>not a number</b> is different: the rule asks a question the data
+     * cannot answer, which is a configuration error and raised as one, so the run is recorded as
+     * FAILED with the reason.
+     */
+    private boolean comparesNumerically(AutomationCondition condition, Object actual, String expected) {
+        if (actual == null || asText(actual).isBlank()) {
+            return false;
+        }
+        int comparison = asNumber(actual, condition, "value")
+                .compareTo(asNumber(expected, condition, "comparison value"));
+        return switch (condition.getOperator()) {
+            case LT -> comparison < 0;
+            case LTE -> comparison <= 0;
+            case GT -> comparison > 0;
+            case GTE -> comparison >= 0;
+            default -> throw new IllegalStateException("not a comparison: " + condition.getOperator());
+        };
+    }
+
+    private java.math.BigDecimal asNumber(Object value, AutomationCondition condition, String what) {
+        try {
+            return new java.math.BigDecimal(String.valueOf(value).trim());
+        } catch (NumberFormatException | NullPointerException exception) {
+            throw new CustomException("Condition on \"" + condition.getSubject() + "\" compares "
+                    + "numerically, but the " + what + " \"" + value + "\" is not a number",
+                    HttpStatus.UNPROCESSABLE_ENTITY);
+        }
     }
 
     /**

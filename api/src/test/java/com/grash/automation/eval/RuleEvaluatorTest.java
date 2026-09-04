@@ -145,6 +145,102 @@ class RuleEvaluatorTest {
     }
 
     @Nested
+    @DisplayName("numeric comparison")
+    class Numbers {
+
+        @Test
+        void comparesAsNumbersAndNotAsText() {
+            // "9" > "10" as text, which is why a text comparison is not an acceptable shortcut:
+            // a rule on "quantity below 10" would be wrong for every single-digit stock level.
+            RuleEvaluator evaluator = evaluatorOver(Map.of("part.quantity", 9));
+
+            assertNull(evaluator.firstUnmetCondition(
+                    ruleWith(condition("part.quantity", ConditionOperator.LT, "10")),
+                    contextWithChangedFields("quantity")));
+        }
+
+        @Test
+        void handlesDecimals() {
+            RuleEvaluator evaluator = evaluatorOver(Map.of("asset.acquisitionCost", 1500.50));
+
+            assertNull(evaluator.firstUnmetCondition(
+                    ruleWith(condition("asset.acquisitionCost", ConditionOperator.GTE, "1500.5")),
+                    contextWithChangedFields("acquisitionCost")));
+        }
+
+        @Test
+        @DisplayName("a missing value satisfies no comparison, not even LTE")
+        void aMissingValueSatisfiesNothing() {
+            // Treating null as zero is the tempting shortcut, and it is how "warranty expired"
+            // would fire for every asset that has no warranty date at all.
+            Map<String, Object> operands = new java.util.HashMap<>();
+            operands.put("asset.acquisitionCost", null);
+            RuleEvaluator evaluator = new RuleEvaluator(List.of(new StubResolver(operands)));
+
+            assertNotNull(evaluator.firstUnmetCondition(
+                    ruleWith(condition("asset.acquisitionCost", ConditionOperator.LTE, "100")),
+                    contextWithChangedFields("name")));
+            assertNotNull(evaluator.firstUnmetCondition(
+                    ruleWith(condition("asset.acquisitionCost", ConditionOperator.GTE, "100")),
+                    contextWithChangedFields("name")));
+        }
+
+        @Test
+        @DisplayName("comparing something that is not a number fails loudly")
+        void nonNumericFailsLoudly() {
+            RuleEvaluator evaluator = evaluatorOver(Map.of("asset.name", "Pumpe P-12"));
+
+            CustomException exception = assertThrows(CustomException.class, () ->
+                    evaluator.firstUnmetCondition(
+                            ruleWith(condition("asset.name", ConditionOperator.GT, "10")),
+                            contextWithChangedFields("name")));
+
+            assertEquals(422, exception.getHttpStatus().value());
+        }
+
+        @Test
+        @DisplayName("a comparison value that is not a number fails loudly too")
+        void nonNumericExpectationFailsLoudly() {
+            RuleEvaluator evaluator = evaluatorOver(Map.of("part.quantity", 5));
+
+            assertThrows(CustomException.class, () -> evaluator.firstUnmetCondition(
+                    ruleWith(condition("part.quantity", ConditionOperator.LT, "zehn")),
+                    contextWithChangedFields("quantity")));
+        }
+    }
+
+    @Nested
+    @DisplayName("IS_SET")
+    class Presence {
+
+        @Test
+        void distinguishesAnEmptyTextFromAnUnsetField() {
+            // The reason this is its own operator: IS with an empty expected value cannot tell
+            // "the field contains nothing" from "the field has no value", and only one of the two
+            // is usually meant.
+            Map<String, Object> operands = new java.util.HashMap<>();
+            operands.put("asset.serialNumber", "   ");
+            RuleEvaluator evaluator = new RuleEvaluator(List.of(new StubResolver(operands)));
+
+            assertNotNull(evaluator.firstUnmetCondition(
+                    ruleWith(condition("asset.serialNumber", ConditionOperator.IS_SET, null)),
+                    contextWithChangedFields("serialNumber")));
+            assertNull(evaluator.firstUnmetCondition(
+                    ruleWith(condition("asset.serialNumber", ConditionOperator.IS_NOT_SET, null)),
+                    contextWithChangedFields("serialNumber")));
+        }
+
+        @Test
+        void holdsForAValueThatIsThere() {
+            RuleEvaluator evaluator = evaluatorOver(Map.of("asset.serialNumber", "SN-1"));
+
+            assertNull(evaluator.firstUnmetCondition(
+                    ruleWith(condition("asset.serialNumber", ConditionOperator.IS_SET, null)),
+                    contextWithChangedFields("serialNumber")));
+        }
+    }
+
+    @Nested
     @DisplayName("CHANGED_TO")
     class ChangedTo {
 

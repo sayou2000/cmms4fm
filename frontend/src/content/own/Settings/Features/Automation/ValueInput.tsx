@@ -148,6 +148,25 @@ export default function ValueInput({
     );
   }
 
+  if (valueType === 'BOOLEAN') {
+    return (
+      <TextField
+        select
+        fullWidth
+        size="small"
+        label={label}
+        value={value}
+        required={required}
+        disabled={disabled}
+        helperText={helperText}
+        onChange={(event) => onChange(event.target.value)}
+      >
+        <MenuItem value="true">{t('automation_yes')}</MenuItem>
+        <MenuItem value="false">{t('automation_no')}</MenuItem>
+      </TextField>
+    );
+  }
+
   if ((valueType === 'ENUM' || valueType === 'CHOICE') && options.length) {
     return (
       <TextField

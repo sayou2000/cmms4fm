@@ -22,7 +22,8 @@ import {
   AutomationRulePayload,
   OperandDescriptor,
   operandKey,
-  operandLabel
+  operandLabel,
+  VALUELESS_OPERATORS
 } from '../../../../../models/owns/automation';
 import ValueInput, { Option, useEntityOptions } from './ValueInput';
 import { getErrorMessage } from '../../../../../utils/api';
@@ -108,7 +109,17 @@ export default function RuleEditor({
   const selectedTrigger = meta.triggers.find(
     (candidate) => triggerKey(candidate.entityType, candidate.changeType) === trigger
   );
+  /**
+   * Only the fields of the entity that triggers the rule. A condition on another entity's field
+   * reads no value and would make the rule quietly never hold — and with every column of five
+   * entities on offer, an unfiltered list runs past a hundred entries.
+   */
+  const subjects = meta.subjects.filter(
+    (subject) => subject.entityType === selectedTrigger?.entityType
+  );
   const operandByKey = (key: string): OperandDescriptor | undefined =>
+    // Searched in the full list, not in the filtered one: an existing rule has to keep rendering
+    // its own conditions even while a different trigger is selected in the form.
     meta.subjects.find((subject) => operandKey(subject) === key);
   const descriptorFor = (actionType: string): ActionDescriptor | undefined =>
     meta.actions.find((action) => action.type === actionType);
@@ -226,10 +237,16 @@ export default function RuleEditor({
             label={t('automation_trigger')}
             value={trigger}
             onChange={(event) => {
+              const [nextEntityType] = event.target.value.split('|');
               setTrigger(event.target.value);
               // The field filter belongs to the trigger's own diff, so it cannot survive a
               // change of trigger — a leftover field name would silently never match.
               setChangedFields([]);
+              // Conditions on another entity's fields cannot be evaluated at all. Dropped rather
+              // than kept, because a stored one reads as a rule that mysteriously never fires.
+              if (nextEntityType !== selectedTrigger?.entityType) {
+                setConditions([]);
+              }
             }}
           >
             {meta.triggers.map((candidate) => {
@@ -321,7 +338,7 @@ export default function RuleEditor({
                       : undefined
                   }
                 >
-                  {meta.subjects.map((subject) => (
+                  {subjects.map((subject) => (
                     <MenuItem key={operandKey(subject)} value={operandKey(subject)}>
                       {operandLabel(subject, t)}
                     </MenuItem>
@@ -335,7 +352,14 @@ export default function RuleEditor({
                   label={t('automation_operator')}
                   value={condition.operator}
                   onChange={(event) =>
-                    setCondition(index, { operator: event.target.value })
+                    setCondition(index, {
+                      operator: event.target.value,
+                      // Cleared, so an "is set" condition does not carry an invisible value that
+                      // reappears when the operator is switched back.
+                      expectedValue: VALUELESS_OPERATORS.includes(event.target.value)
+                        ? ''
+                        : condition.expectedValue
+                    })
                   }
                 >
                   {(operand?.operators ?? []).map((operator) => (
@@ -346,16 +370,20 @@ export default function RuleEditor({
                 </TextField>
 
                 <Box sx={{ width: '100%' }}>
-                  <ValueInput
-                    valueType={operand?.valueType ?? 'TEXT'}
-                    options={operand?.options ?? []}
-                    value={condition.expectedValue}
-                    label={t('automation_value')}
-                    optionsFor={optionsFor}
-                    onChange={(value) =>
-                      setCondition(index, { expectedValue: value })
-                    }
-                  />
+                  {/* "is set" compares against nothing. A value box next to it invites filling
+                      in something that is then silently ignored. */}
+                  {!VALUELESS_OPERATORS.includes(condition.operator) && (
+                    <ValueInput
+                      valueType={operand?.valueType ?? 'TEXT'}
+                      options={operand?.options ?? []}
+                      value={condition.expectedValue}
+                      label={t('automation_value')}
+                      optionsFor={optionsFor}
+                      onChange={(value) =>
+                        setCondition(index, { expectedValue: value })
+                      }
+                    />
+                  )}
                 </Box>
 
                 <IconButton
@@ -373,9 +401,9 @@ export default function RuleEditor({
           <Box>
             <Button
               startIcon={<AddTwoToneIcon />}
-              disabled={!meta.subjects.length}
+              disabled={!subjects.length}
               onClick={() => {
-                const first = meta.subjects[0];
+                const first = subjects[0];
                 setConditions([
                   ...conditions,
                   {

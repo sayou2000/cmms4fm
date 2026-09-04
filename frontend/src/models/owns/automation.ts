@@ -19,19 +19,39 @@ export type RunStatus = 'SUCCESS' | 'SKIPPED' | 'FAILED';
 export type ValueType =
   | 'TEXT'
   | 'NUMBER'
+  | 'BOOLEAN'
+  | 'DATE'
   | 'ENUM'
   | 'CHOICE'
   | 'TRIGGER_REFERENCE'
   | `ENTITY_${string}`;
 
+/**
+ * Operators that compare against nothing. The editor hides the value input for these — an
+ * "is set" condition with a value box next to it invites filling it in, and whatever is typed
+ * there is then silently ignored.
+ */
+export const VALUELESS_OPERATORS = ['IS_SET', 'IS_NOT_SET'];
+
 export interface OperandDescriptor {
+  /**
+   * Which entity the field belongs to. The editor offers only the fields of the entity the rule
+   * is triggered by: a condition on another entity's field resolves to no value and would make
+   * the rule quietly never hold. With every column of five entities on offer, that is also the
+   * difference between a usable dropdown and one with over a hundred entries.
+   */
+  entityType: string;
   /** The path a condition stores, e.g. `asset.status` or `asset.cf`. */
   subject: string;
   /** Set exactly when `subject` is the custom-field subject. */
   customFieldId: number | null;
   /** A translation key for a built-in operand; null for a custom field. */
   labelKey: string | null;
-  /** The user's own wording for a custom field; null for a built-in operand. */
+  /**
+   * What to show when `labelKey` has no translation: a custom field's own name, or a readable
+   * form of the attribute name. The generic resolver offers far more fields than are worth
+   * translating up front, and a raw key in a dropdown is unusable.
+   */
   label: string | null;
   valueType: ValueType;
   operators: string[];
@@ -135,9 +155,18 @@ export interface AutomationRun {
   triggeredAt: string;
 }
 
-/** How an operand is labelled: a translation key for built-ins, the user's own text otherwise. */
+/**
+ * How an operand is labelled: the translation when there is one, the server's readable fallback
+ * otherwise.
+ *
+ * <p>The order matters. A custom field has no `labelKey` and its `label` is the user's own
+ * wording, which must never be translated. A native field has both, and the translation has to
+ * win — otherwise adding a key would have no effect and the English fallback would stay forever.
+ */
 export const operandLabel = (operand: OperandDescriptor, t: any): string =>
-  operand.label ?? (operand.labelKey ? t(operand.labelKey) : operand.subject);
+  operand.labelKey
+    ? t(operand.labelKey, { defaultValue: operand.label ?? operand.subject })
+    : operand.label ?? operand.subject;
 
 /** Identifies an operand in a select, since a custom field shares its subject with all others. */
 export const operandKey = (operand: {

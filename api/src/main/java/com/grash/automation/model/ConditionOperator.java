@@ -18,5 +18,28 @@ public enum ConditionOperator {
      * The operand changed <em>to</em> this value in the change that triggered the rule. Needs
      * the event's field diff, so it only means anything for {@link com.grash.automation.event.ChangeType#UPDATED}.
      */
-    CHANGED_TO
+    CHANGED_TO,
+
+    /**
+     * Numeric comparisons. They exist because the generic resolver offers every numeric column
+     * of an entity, and "quantity is exactly 5" is almost never the question worth asking —
+     * "below the minimum" is.
+     *
+     * <p>Both sides are compared as numbers, not as text. A value that is not a number at all is
+     * an error rather than a false: comparing "abc" to 5 is a broken rule, and answering "does
+     * not hold" would hide it for as long as the rule exists. A value that is simply
+     * <em>missing</em> is a different case and satisfies no comparison.
+     */
+    LT,
+    LTE,
+    GT,
+    GTE,
+
+    /**
+     * Whether the operand has a value at all. Needed as its own operator because {@code IS} with
+     * an empty expected value is ambiguous — an empty text field and an unset field are
+     * different things, and only one of them is usually meant.
+     */
+    IS_SET,
+    IS_NOT_SET
 }

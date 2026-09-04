@@ -304,7 +304,12 @@ automation:
   # runs beside the old workflow engine rather than replacing it (see
   # docs/workflow-engine-konzept.md), so switching it on adds behaviour and removes none.
   enabled: ${AUTOMATION_ENABLED:false}
-  # How deep a chain of rules triggering rules may go. The worst case is an ASSET_UPDATED rule
-  # whose action writes that asset; the diff filter and idempotent handlers usually stop that
-  # earlier, and this is the backstop that does not depend on either being right.
+  # How deep a chain of rules triggering rules may go. Load-bearing since change capture went
+  # generic: every write is announced, including the writes a rule's own actions perform, so a
+  # rule that reacts to what it also writes would otherwise never stop. CascadeContext keeps such
+  # a write inside the cascade that caused it, and this is the limit it runs into.
   max-depth: ${AUTOMATION_MAX_DEPTH:3}
+  # How many changed rows one transaction may announce before the rest is dropped with a warning.
+  # A CSV import of five thousand assets would otherwise hand five thousand events to the engine.
+  # Raise it only for a bulk operation that rules genuinely have to see.
+  max-changes-per-transaction: ${AUTOMATION_MAX_CHANGES_PER_TRANSACTION:200}

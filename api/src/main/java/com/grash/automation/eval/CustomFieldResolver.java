@@ -55,6 +55,7 @@ public class CustomFieldResolver implements OperandResolver {
                         company.getCompanySettings(), CustomFieldEntityType.ASSET)
                 .stream()
                 .map(field -> new OperandDescriptor(
+                        com.grash.automation.event.EntityType.ASSET,
                         SUBJECT,
                         field.getId(),
                         null,

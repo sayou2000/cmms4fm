@@ -492,6 +492,23 @@ Metadaten-Endpunkt und Editor gebaut werden. Umfang:
 
 Danach wird neu entschieden. Trägt UC-1 fachlich, folgt:
 
+### Phase 1G — Generische Änderungserfassung (erledigt)
+
+Der Feld-Diff kommt nicht mehr aus handgeschriebenen Vergleichen in den Diensten, sondern aus
+Hibernates eigener Dirty-Property-Menge (`automation/capture/**`). Damit ist **Falle F2 nicht
+behoben, sondern unmöglich geworden**: der Diff ist die Spaltenliste der ausgeführten
+Anweisung, also sieht er auch einen Status, den `triggerDownTime` erst danach schreibt. Zehn
+Trigger (Anlegen und Ändern für Anlage, Auftrag, Meldung, Teil, Bestellung) sind damit
+gleichzeitig live, ohne eine Publikationsstelle pro Dienst. Dazu ein Resolver aus dem
+JPA-Metamodell, der jedes Feld jeder beobachteten Entität als Bedingung anbietet, und die
+dafür nötigen Operatoren (`<`, `≤`, `>`, `≥`, gefüllt, leer).
+
+Der Preis, und er ist neu: die Engine hört ihre eigenen Schreibvorgänge. Ohne
+`CascadeContext` — ein ThreadLocal von der laufenden Regel bis zum Flush ihrer Aktionen —
+käme jeder davon mit neuer `correlationId` und Tiefe 0 an, und beide
+Schleifenschutz-Mechanismen wären blind. Dazu eine Obergrenze pro Transaktion, damit ein
+CSV-Import nicht 5000 Ereignisse erzeugt.
+
 ### Phase 1F — Metadaten und Editor (erledigt)
 
 `OperandResolver.describe` und `ActionHandler.descriptor` als zweite Hälfte der beiden
@@ -502,9 +519,15 @@ Workflow-Seite bleibt unberührt daneben stehen.
 
 ### Phase 1 — Breite (nach Bedarf)
 
-Weitere Publikationsstellen (die verbleibenden Webhook-Stellen) — und mit jeder davon ein
-Eintrag in `LIVE_TRIGGERS` — OR-Gruppen, restliche Operatoren, `AssignFieldHandler` als
-Anreicherung, `SetAssetStatusHandler` über `triggerDownTime`. Backend 2—3 T.
+Die Aktionen von der Anlage lösen — Platzhalter `${trigger.workOrder.…}` und
+`${trigger.request.…}`, `SET_CUSTOM_FIELD` für Aufträge, `CustomFieldResolver` für die
+übrigen Merkmalsträger — semantische Auslöser (Meldung genehmigt/abgelehnt), OR-Gruppen,
+`AssignFieldHandler` als Anreicherung, `SetAssetStatusHandler` über `triggerDownTime`.
+Backend 2—3 T.
+
+Reihenfolge und Begründung in [`automation-engine.md`](automation-engine.md) §3: die
+Bedingungen können seit Phase 1G alles, die Aktionen nicht, und diese Asymmetrie ist der
+Grund, dort anzufangen.
 
 ### Phase 2 — Konsolidierung und Erweiterung (jeweils eigenständig)
 
