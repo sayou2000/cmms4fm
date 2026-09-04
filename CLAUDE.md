@@ -20,10 +20,11 @@ records why an async listener cannot persist a `CompanyAudit` entity without set
 by hand, why a field diff in `AssetService.update` misses every status change, and why the rule
 editor asks the server what exists instead of keeping its own lists;
 [`docs/automation-engine.md`](docs/automation-engine.md) is its working companion — read it
-before publishing a new trigger, because it lists the three places that have to be edited
-together (`AutomationRuleRunner.loadTriggerEntity`, `AutomationMetaService.LIVE_TRIGGERS`, a
-resolver) and the four traps in the candidate publish points, above all that work orders have
-two update paths and that a request approval is a cascade;
+before touching `automation/capture/**` or adding a trigger, because it records that field
+changes are captured from Hibernate's own dirty-property set rather than from per-service publish
+points, that a rule's own writes are therefore announced back to it and only `CascadeContext`
+keeps that from looping, and that one transaction may announce at most
+`AUTOMATION_MAX_CHANGES_PER_TRANSACTION` changed rows before the rest is dropped with a warning;
 [`docs/mcp-server-konzept.md`](docs/mcp-server-konzept.md) plus [`mcp/README.md`](mcp/README.md)
 for the MCP server — read them before touching `mcp/`, the `/mcp` nginx route or anything about
 `x-api-key`, because they record why tool names cannot come from `operationId`, why read/write
@@ -455,7 +456,7 @@ fix silently overwritten:
 | Reporting: export headers | `messages.properties`, `messages_de_DE.properties` (appended keys) |
 | Saved views | `SavedView*` (new files), `frontend` work-order and asset list pages, `hooks/useTableState.ts`, `hooks/useExport.ts` |
 | Request triage | Almost all new files (`service/triage/**`, `event/**`, `RequestQualification*`, `AssetTriageRepository`, `frontend` `QualificationCard.tsx` + `slices/requestQualification.ts`), so a sync should not touch them. The exceptions are the ones to watch: **`RequestController`** carries one added line at the end of `onRequestCreation` — the published `RequestCreatedEvent` — and upstream edits that method; and `RequestDetails.tsx` renders `<QualificationCard>` above the approve buttons. `AssetRepository` is deliberately *not* involved: the triage query lives in its own repository interface so it cannot conflict |
-| Rule automation (new engine) | `api/.../automation/**` and the `frontend` `Settings/Features/Automation/**`, `slices/automation.ts`, `models/owns/automation.ts` are all new, so a sync cannot touch them. The edited files are the ones to watch: **`AssetService.dispatchAssetStatusChangeWebhook`** publishes the `EntityChangedEvent` and upstream edits that method (`AssetServiceTest` needs the `ApplicationEventPublisher` mock with it); `application.yml` carries `automation.*`; and on the frontend `router/app.tsx`, `Settings/Features/index.tsx`, `store/rootReducer.ts` plus the appended `en.ts`/`de.ts` keys each hold one added line or block. Note also that `AutomationMetaService.LIVE_TRIGGERS` is hand-maintained: a new publish point has to be added there or the editor keeps showing that trigger as unavailable |
+| Rule automation (new engine) | `api/.../automation/**` and the `frontend` `Settings/Features/Automation/**`, `slices/automation.ts`, `models/owns/automation.ts` are all new, so a sync cannot touch them. Two edited files matter. **`AssetService`**: our earlier `EntityChangedEvent` publish in `dispatchAssetStatusChangeWebhook` is **gone again** — field changes now come from Hibernate, and publishing there too would run every rule twice; if a sync reintroduces it, delete it rather than merging it. `application.yml` carries the `automation.*` keys. On the frontend `router/app.tsx`, `Settings/Features/index.tsx`, `store/rootReducer.ts` plus the appended `en.ts`/`de.ts` keys each hold one added line or block. The one thing to re-check after a Hibernate or Spring upgrade is `automation/capture/ChangeListenerRegistrar`, which unwraps `SessionFactoryImpl` and calls `requireService(EventListenerRegistry)` — an API that has moved between Hibernate majors before. It runs in `@PostConstruct`, so a break fails the whole context and every integration test with it, which is the right way round |
 | File search and filters | `content/own/Files/index.tsx`, `content/own/Files/Filters/**` |
 | File→asset/work-order links | `File` (`workOrders` join table), `FileShowDTO`, `FileMapper` |
 | Build tooling (frontend) | **Upstream is still Create React App; this fork is not.** `frontend/vite.config.ts` (new), `frontend/index.html` (moved out of `public/`), `frontend/package.json` scripts, `src/config.ts` + `src/serviceWorker.ts` (`import.meta.env` instead of `process.env`), `src/vite-env.d.ts`. Deleted here: `config-overrides.js`, `src/react-app-env.d.ts`. An upstream change touching the build, `public/index.html` or `REACT_APP_*` needs translating, not merging |

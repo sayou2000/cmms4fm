@@ -1,6 +1,7 @@
 package com.grash.automation;
 
 import com.grash.automation.action.ActionHandler;
+import com.grash.automation.capture.TrackedEntities;
 import com.grash.automation.action.ActionParameters;
 import com.grash.automation.dto.AutomationMetaDTO;
 import com.grash.automation.event.ChangeType;
@@ -15,6 +16,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 
 /**
  * Assembles the editor's metadata by asking the components themselves.
@@ -34,22 +36,28 @@ public class AutomationMetaService {
     private boolean engineEnabled;
 
     /**
-     * The triggers that are wired end to end, i.e. that some service actually publishes.
+     * The change types a column diff can reveal by itself.
      *
-     * <p>This one list is hand-maintained and cannot be derived — a publisher is a line inside a
-     * domain service, not a bean to enumerate — so it is the one place that can go stale. It is
-     * kept anyway, because the alternative is worse: without it the editor offers every
-     * {@link EntityType} × {@link ChangeType} combination, and 35 of the 36 produce a rule that
-     * saves, looks correct and never fires. <b>When a publish point is added, add it here.</b>
+     * <p>Every entity in {@link TrackedEntities} has both of these, because Hibernate reports
+     * every insert and every update of it. What is left over is the semantic half — whether an
+     * update <em>means</em> "approved" or "closed" — which only the service performing it knows
+     * and which therefore still needs a hand-written publish point.
      *
-     * @see com.grash.service.AssetService the only publisher so far
+     * <p>Those two constants are the whole of what used to be a hand-maintained list of every
+     * live trigger combination. Forgetting to extend that list left a working trigger greyed out
+     * in the editor with nothing to explain why.
      */
-    private static final List<AutomationMetaDTO.Trigger> LIVE_TRIGGERS = List.of(
-            new AutomationMetaDTO.Trigger(EntityType.ASSET, ChangeType.UPDATED, true,
-                    // The diff reports the status change only. AssetService.update builds its own
-                    // field list for the webhook and status is not in it, so the event is
-                    // published from the status-change path instead — see the concept document.
-                    List.of("status")));
+    private static final Set<ChangeType> DERIVED_FROM_DIFF =
+            Set.of(ChangeType.CREATED, ChangeType.UPDATED);
+
+    /**
+     * Semantic triggers with a publish point today, as {@code ENTITY_TYPE:CHANGE_TYPE}.
+     *
+     * <p>Empty on purpose: none are wired yet. {@code REQUEST:APPROVED} is the first one worth
+     * having, and adding it means publishing an {@code EntityChangedEvent} from
+     * {@code RequestService.approve} and naming it here.
+     */
+    private static final Set<String> LIVE_SEMANTIC_TRIGGERS = Set.of();
 
     @Transactional(readOnly = true)
     public AutomationMetaDTO describe(Company company) {
@@ -60,7 +68,10 @@ public class AutomationMetaService {
 
         return new AutomationMetaDTO(
                 engineEnabled,
-                allTriggers(),
+                // Triggers after the subjects, and from them: the field filter of a trigger may
+                // only offer names the diff can really report, and those are exactly the native
+                // fields the resolvers just described.
+                allTriggers(subjects),
                 subjects,
                 handlers.stream().map(ActionHandler::descriptor).toList(),
                 ActionParameters.PLACEHOLDERS.keySet().stream().sorted()
@@ -68,21 +79,45 @@ public class AutomationMetaService {
     }
 
     /**
-     * Every combination, each marked live or not. The dead ones are reported rather than omitted
-     * so the editor can say "not yet available" instead of leaving the user to guess why the
-     * trigger they expected is missing.
+     * Every combination, each marked live or not, and for a live update trigger the fields its
+     * diff can report.
+     *
+     * <p>The dead combinations are reported rather than omitted so the editor can say "not yet
+     * available" instead of leaving the user to guess why the trigger they expected is missing.
      */
-    private List<AutomationMetaDTO.Trigger> allTriggers() {
+    private List<AutomationMetaDTO.Trigger> allTriggers(List<OperandDescriptor> subjects) {
+        Set<EntityType> watched = Set.copyOf(TrackedEntities.all().values());
         List<AutomationMetaDTO.Trigger> triggers = new ArrayList<>();
         for (EntityType entityType : EntityType.values()) {
             for (ChangeType changeType : ChangeType.values()) {
-                triggers.add(LIVE_TRIGGERS.stream()
-                        .filter(live -> live.entityType() == entityType && live.changeType() == changeType)
-                        .findFirst()
-                        .orElseGet(() -> new AutomationMetaDTO.Trigger(entityType, changeType, false,
-                                List.of())));
+                boolean live = watched.contains(entityType)
+                        ? DERIVED_FROM_DIFF.contains(changeType)
+                        : LIVE_SEMANTIC_TRIGGERS.contains(entityType + ":" + changeType);
+                triggers.add(new AutomationMetaDTO.Trigger(entityType, changeType, live,
+                        live && changeType == ChangeType.UPDATED
+                                ? changeableFieldsOf(entityType, subjects) : List.of()));
             }
         }
         return triggers;
+    }
+
+    /**
+     * The field names an UPDATE of this entity can report.
+     *
+     * <p>Taken from the subjects, so the filter can only offer names the diff really produces —
+     * offering one it does not is a filter that silently matches nothing, which is the failure
+     * this endpoint exists to prevent. Custom fields are excluded for that very reason: they are
+     * rows in another table, not columns of the entity, so no UPDATE of the entity ever names
+     * one.
+     */
+    private List<String> changeableFieldsOf(EntityType entityType, List<OperandDescriptor> subjects) {
+        String prefix = TrackedEntities.prefixOf(entityType) + ".";
+        return subjects.stream()
+                .filter(operand -> operand.customFieldId() == null)
+                .map(OperandDescriptor::subject)
+                .filter(subject -> subject.startsWith(prefix))
+                .map(subject -> subject.substring(prefix.length()))
+                .sorted()
+                .toList();
     }
 }

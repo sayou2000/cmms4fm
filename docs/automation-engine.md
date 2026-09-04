@@ -1,14 +1,14 @@
 # Automatisierungs-Engine: Stand und Erweiterung
 
 Arbeitsdokument. Es beschreibt, **was heute läuft**, **wie ein weiterer Auslöser entsteht** und
-**welche Kandidaten es gibt** — geordnet nach Nutzen, mit den Fallen, die im Code stehen.
+**was als nächstes ansteht**.
 
-Die Begründungen und Entscheidungen stehen weiterhin in
+Die Begründungen und Entscheidungen stehen in
 [`workflow-engine-konzept.md`](workflow-engine-konzept.md); dieses Dokument wiederholt sie nicht.
-Grobe Arbeitsteilung: das Konzept sagt *warum es so gebaut ist* und bleibt stabil, dieses hier
-sagt *was gerade wahr ist* und ändert sich mit jedem neuen Auslöser.
+Arbeitsteilung: das Konzept sagt *warum es so gebaut ist* und bleibt stabil, dieses hier sagt
+*was gerade wahr ist*.
 
-Stand: 2026-09-04, Commit `222aad38`.
+Stand: 2026-09-04.
 
 ---
 
@@ -18,301 +18,215 @@ Stand: 2026-09-04, Commit `222aad38`.
 
 | Schicht | Dateien | Zustand |
 |---|---|---|
-| Ereignis | `automation/event/EntityChangedEvent`, `AutomationListener`, `CurrentActor` | Läuft. `@TransactionalEventListener(AFTER_COMMIT)` + `@Async` auf eigenem Executor |
-| Regelmodell | `automation/model/AutomationRule`, `AutomationCondition`, `AutomationActionStep`, `AutomationRun` | Läuft. Vier Tabellen, Liquibase, Enums als `VARCHAR` |
-| Auswertung | `automation/eval/RuleEvaluator` + `AssetResolver`, `CustomFieldResolver` | Läuft, **nur für Anlagen** |
-| Aktionen | `automation/action/CreateWorkOrderHandler`, `NotifyHandler`, `SetCustomFieldHandler` | Läuft |
-| Ausführung | `AutomationEngine`, `AutomationRuleRunner`, `AutomationRunService` | Läuft. Je Regel eigene Transaktion, Lauf-Protokoll in noch einer |
-| Metadaten | `AutomationMetaService`, `GET /automation-rules/meta` | Läuft |
-| API | `AutomationRuleController` | CRUD, `enabled`, `runs`, `meta` — alles company-scoped |
+| Änderungserfassung | `automation/capture/**` | Läuft. Hibernate-Listener → Transaktions-Sammler → Ereignis nach dem Commit |
+| Ereignis | `automation/event/EntityChangedEvent`, `CommittedEntityChange`, `AutomationListener`, `CurrentActor` | Läuft. Zwei Wege, siehe §1.3 |
+| Regelmodell | `automation/model/**` | Läuft. Vier Tabellen, Liquibase, Enums als `VARCHAR` |
+| Auswertung | `automation/eval/RuleEvaluator`, `EntityFieldResolver`, `CustomFieldResolver` | Läuft. **Alle Felder** aller beobachteten Entitäten |
+| Aktionen | `automation/action/**` — Auftrag anlegen, benachrichtigen, Merkmal setzen | Läuft, anlagenzentriert (§1.5) |
+| Ausführung | `AutomationEngine`, `AutomationRuleRunner`, `AutomationRunService` | Läuft. Je Regel eigene Transaktion, Protokoll in noch einer |
+| Metadaten | `AutomationMetaService`, `GET /automation-rules/meta` | Läuft, vollständig abgeleitet |
 | GUI | `frontend/.../Settings/Features/Automation/**` | Läuft, `/app/settings/features/automation` |
-| Schalter | `AUTOMATION_ENABLED` (Standard `false`), `AUTOMATION_MAX_DEPTH` (3) | Auf dieser Instanz beide gesetzt |
+| Schalter | `AUTOMATION_ENABLED`, `AUTOMATION_MAX_DEPTH`, `AUTOMATION_MAX_CHANGES_PER_TRANSACTION` | Standard aus / 3 / 200 |
 
-44 Tests im Paket `com.grash.automation`, 1445 in der Suite. Ein echter Ende-zu-Ende-Test über
-`AFTER_COMMIT` fehlt weiterhin (bräuchte Testcontainers, also Docker).
+69 Tests im Paket `com.grash.automation`. Ein Ende-zu-Ende-Test über eine echte Transaktion fehlt
+weiter; die Registrierung des Hibernate-Listeners wird faktisch von den Integrationstests
+abgedeckt, weil ein Fehler dort den Anwendungskontext gar nicht starten lässt.
 
-### 1.2 Die einzige lebende Publikationsstelle
+### 1.2 Woher die Ereignisse kommen
 
-```
-AssetService.dispatchAssetStatusChangeWebhook   (AssetService.java:775)
-  → EntityChangedEvent.root(UPDATED, ASSET, id, companyId, {"status"}, actor)
-```
+**Alles, was Hibernate schreibt.** `AutomationChangeListener` hängt an `POST_INSERT` und
+`POST_UPDATE` und fragt Hibernate, welche Spalten die Anweisung wirklich berührt hat
+(`PostUpdateEvent.getDirtyProperties()`). Beobachtet wird, was in `TrackedEntities` steht:
 
-Das ist **eine von 36** möglichen Trigger-Kombinationen (6 Entitätsarten × 6 Änderungsarten).
-Die anderen 35 sind im Editor sichtbar und als *noch nicht verfügbar* ausgegraut, weil eine
-Regel darauf sauber speichern und nie feuern würde.
+| Entität | `EntityType` | Präfix für Bedingungen |
+|---|---|---|
+| `Asset` | `ASSET` | `asset.` |
+| `WorkOrder` | `WORK_ORDER` | `workOrder.` |
+| `Request` | `REQUEST` | `request.` |
+| `Part` | `PART` | `part.` |
+| `PurchaseOrder` | `PURCHASE_ORDER` | `purchaseOrder.` |
 
-Drei Stellen wissen davon, und alle drei müssen mitwachsen:
+Daraus ergeben sich **zehn lebende Trigger** — Anlegen und Ändern je Entität — ohne dass sie
+irgendwo aufgezählt werden. Eine Entität hinzuzufügen heißt: eine Zeile in `TrackedEntities`.
 
-1. `AutomationRuleRunner.loadTriggerEntity` — `switch` über `EntityType`, `default` wirft
-   `501 NOT_IMPLEMENTED`. Bewusst laut: eine Regel auf einem unverdrahteten Trigger soll als
-   FAILED im Protokoll stehen, nicht stumm nichts tun.
-2. `AutomationMetaService.LIVE_TRIGGERS` — die eine handgepflegte Liste. Fehlt der Eintrag,
-   bleibt der Trigger im Editor ausgegraut, obwohl er funktionieren würde.
-3. Der Resolver für die Felder der neuen Entitätsart — ohne ihn hat die Regel keine Bedingungen
-   außer denen, die es gar nicht gibt.
+Das ersetzt die vorherige Bauweise, in der jeder Dienst eine eigene Publikationsstelle mit einem
+eigenen, handgeschriebenen Feldvergleich brauchte. Diese Vergleiche waren untereinander
+uneinig — Aufträge hatten zwei Änderungspfade mit zwei verschiedenen Diffs — und beim
+Anlagenstatus war der Diff sogar strukturell blind, weil `triggerDownTime` den Status erst nach
+der Berechnung schrieb. Diese Falle (F2 im Konzept) ist damit nicht behoben, sondern
+**unmöglich geworden**: der Diff ist die Spaltenliste der ausgeführten Anweisung.
 
-### 1.3 Die Anlagen-Schieflage in den Aktionen
+### 1.3 Zwei Ereigniswege, und warum
 
-Das ist der Teil, der beim ersten weiteren Trigger sofort wehtut, und er steht nicht im Konzept:
-**die Aktionen sind anlagenzentriert.**
+- **`CommittedEntityChange`** — von der Erfassung, publiziert aus
+  `TransactionSynchronization.afterCommit`. Wird von einem gewöhnlichen `@EventListener`
+  aufgenommen, weil es an dieser Stelle keine Transaktion mehr gibt, an der ein
+  `@TransactionalEventListener` hängen könnte.
+- **`EntityChangedEvent`** — von Hand aus einem Dienst, für die *semantischen* Änderungsarten.
+  Ob ein Update „genehmigt" bedeutet, steht in keiner Spalte. Wird von einem
+  `@TransactionalEventListener(AFTER_COMMIT)` aufgenommen.
 
-- `ActionParameters.PLACEHOLDERS` kennt genau vier Namen: `trigger.id`, `trigger.asset.id`,
-  `trigger.asset.name`, `trigger.asset.status`. Bei einem Auftrags-Trigger löst
-  `${trigger.asset.…}` eine Ausnahme aus („This rule was not triggered by an asset"), und
-  `${trigger.id}` ist dann die Auftrags-ID — richtig, aber die einzige verfügbare Referenz.
-- `SetCustomFieldHandler` schreibt **nur** auf Anlagen und sagt das auch (`SET_CUSTOM_FIELD only
-  applies to assets`).
-- `CustomFieldResolver` liest nur Anlagen-Merkmale (`CustomFieldEntityType.ASSET`), obwohl es
-  Merkmale auch für Aufträge, Standorte, Teile, Zähler, Lieferanten und Kunden gibt.
-  Für Meldungen übrigens nicht — `CustomFieldEntityType` hat kein `REQUEST`, nur
-  `PURCHASE_REQUEST` (Bestellanforderung). Eine Meldungsregel kann also keine Merkmale lesen.
+Beide laufen in `AutomationEngine.handle` zusammen. Zwei Typen statt einem, weil ein einziger
+Typ zwei Listener bräuchte — und der nicht-transaktionale würde für ein von Hand publiziertes
+Ereignis **vor** dem Commit feuern. Die Regel läse dann je nach Timing den alten Zustand.
 
-Ein Auftrags-Trigger ist also erst brauchbar, wenn mindestens die Platzhalter mitwachsen. Das
-gehört in denselben Arbeitsgang, nicht in einen späteren — sonst entsteht genau die Sorte
-halb verdrahteter Fähigkeit, die dieses Projekt gerade abgelöst hat.
+### 1.4 Der Sammler: warum nicht pro Anweisung publiziert wird
 
-### 1.4 Was offen bleibt
+Eine Anfrage kann dieselbe Zeile mehrfach schreiben. `AssetService.patch` schreibt die Anlage,
+`triggerDownTime` danach ihren Status — zwei UPDATEs, jedes meldet nur seine eigenen Spalten.
+Pro Anweisung publiziert entstünden zwei Ereignisse mit je einer halben Wahrheit: eine Regel mit
+Feldfilter `status` sähe das eine, eine mit Filter `name` das andere, keine die Änderung als
+Ganzes. `TransactionChangeCollector` führt sie je Zeile zusammen und publiziert einmal.
 
-- **Akteur:** `createdBy` bleibt bei allem, was die Engine anlegt, leer — im Async-Thread gibt
-  es keinen Security-Context, und ein technischer Benutzer ist derzeit nicht anlegbar
-  (Konzept §9.1).
-- **Alt-Engine:** läuft unverändert weiter und wird an denselben Stellen weiter aufgerufen
-  (`RequestService` bei Genehmigung/Ablehnung, `WorkOrderService` beim Abschluss). Koexistenz
-  ist beabsichtigt; ein neuer Trigger *ersetzt* keinen Alt-Aufruf, er tritt daneben.
-- **Kein Zeit-Auslöser.** Alles hier ist reaktiv. „Nach 3 Tagen ohne Reaktion" ist Stufe 2 im
-  Konzept (§10) und braucht Quartz, nicht einen weiteren Trigger.
+Drei Eigenschaften dieses Sammlers sind tragend und getestet:
+
+- **Nichts vor dem Commit.** Sonst liest eine Regel auf dem anderen Thread den alten Zustand.
+- **Kaskaden werden geerbt.** Ein Schreibvorgang, den eine Regelaktion auslöst, wird wie jeder
+  andere gemeldet. Ohne `CascadeContext` käme er mit neuer `correlationId` und Tiefe 0 an — und
+  beide Schleifenschutz-Mechanismen wären blind. Eine Regel „wenn Anlage sich ändert, setze
+  Merkmal" würde sich selbst endlos auslösen. Das ist der Preis der generischen Erfassung, und
+  er ist mit einem ThreadLocal bezahlt, der von der laufenden Regel bis zum Flush ihrer Aktionen
+  reicht.
+- **Massenschreibvorgänge sind begrenzt.** Ein CSV-Import von 5000 Anlagen würde sonst 5000
+  Ereignisse erzeugen. Ab `AUTOMATION_MAX_CHANGES_PER_TRANSACTION` (200) wird der Rest der
+  Transaktion mit einer Warnung verworfen — sichtbar, weil eine halb ausgewertete Massenänderung
+  schlimmer wäre als eine gar nicht ausgewertete.
+
+Bei `AUTOMATION_ENABLED=false` sammelt die Erfassung nichts. Ein Standard-Aus-Schalter soll
+heißen, dass der Mechanismus nicht da ist.
+
+### 1.5 Was die Bedingungen können — und was die Aktionen noch nicht
+
+`EntityFieldResolver` leitet die Felder aus dem **JPA-Metamodell** ab: jede skalare Spalte und
+jede `@ManyToOne`-Beziehung jeder beobachteten Entität, mit dem Wertetyp aus dem Java-Typ. Ein
+Operator wird nur angeboten, wo er entscheiden kann:
+
+| Java-Typ | Wertetyp | Operatoren |
+|---|---|---|
+| `String` | TEXT | ist / ist nicht / enthält / gefüllt / leer / wechselt auf |
+| Enum | ENUM | ist / ist nicht / wechselt auf |
+| `boolean` | BOOLEAN | ist / wechselt auf |
+| Zahl | NUMBER | ist / ist nicht / < / ≤ / > / ≥ / gefüllt / leer |
+| `Date` | DATE | gefüllt / leer / wechselt auf |
+| `@ManyToOne` | ENTITY_* | ist / ist nicht / gefüllt / leer / wechselt auf |
+
+Datumsfelder bekommen bewusst **keinen** Vergleich: „älter als 3 Tage" ist ein Zeit-Auslöser
+(Konzept §10 Stufe 2), kein Vergleich mit einem Zeitstempel. `-to-many`-Beziehungen fehlen, weil
+eine Bedingung über „die Ersatzteile" einen Quantor bräuchte, den das Modell nicht hat.
+
+**Die Aktionen sind dagegen weiter anlagenzentriert**, und das ist die offensichtlichste Lücke:
+
+- `ActionParameters.PLACEHOLDERS` kennt vier Namen, drei davon `${trigger.asset.…}`. Bei einem
+  Auftrags-Trigger bleibt nur `${trigger.id}`.
+- `SetCustomFieldHandler` schreibt nur auf Anlagen.
+- `CustomFieldResolver` liest nur Anlagen-Merkmale, obwohl es Merkmale auch für Aufträge,
+  Standorte, Teile, Zähler, Lieferanten und Kunden gibt. Für Meldungen nicht:
+  `CustomFieldEntityType` hat kein `REQUEST`, nur `PURCHASE_REQUEST`.
+
+### 1.6 Was offen bleibt
+
+- **Akteur:** `createdBy` bleibt bei allem leer, was die Engine anlegt (Konzept §9.1). Folge:
+  niemand wird benachrichtigt, und ein Benutzer ohne „Aufträge anderer sehen" findet einen
+  regelerzeugten Auftrag nicht in seiner Liste.
+- **Semantische Auslöser:** genehmigt / abgelehnt / abgeschlossen haben noch keine
+  Publikationsstelle. `LIVE_SEMANTIC_TRIGGERS` ist leer.
+- **Alt-Engine:** läuft unverändert weiter und wird an denselben Stellen aufgerufen. Beim Testen
+  verwirrend: eine doppelt angelegte Aufgabe kann aus einer Alt-Regel kommen.
 
 ---
 
 ## 2. Rezept: ein neuer Auslöser
 
-Sieben Schritte. Die Reihenfolge ist nicht beliebig — nach Schritt 3 ist der Trigger im Editor
-wählbar, und wer dort aufhört, hat eine Regel gebaut, die läuft und nichts lesen kann.
+Es gibt jetzt zwei Sorten, und sie kosten sehr unterschiedlich viel.
 
-### Schritt 1 — Publikationsstelle
+### 2a — Eine weitere Entität beobachten (klein)
 
-In den Dienst, der die Änderung durchführt, **innerhalb** der Transaktion:
+1. Zeile in `TrackedEntities`. Die Klasse muss `CompanyAudit` erweitern, sonst fehlt die Company
+   und das Ereignis wird verworfen.
+2. `AutomationMetaServiceTest.areDerivedFromTheWatchedEntities` zählt die lebenden Trigger; die
+   Zahl wächst mit. Das ist die beabsichtigte Kopplung.
+3. Platzhalter in `ActionParameters` ergänzen, damit Aktionen die auslösende Entität überhaupt
+   referenzieren können.
+4. i18n-Schlüssel für die wichtigsten Felder in `en.ts` und `de.ts`. Ohne sie zeigt der Editor
+   den vom Server gelieferten lesbaren Ersatztext („Serial number"), nicht den rohen Schlüssel —
+   Nachziehen ist also jederzeit möglich, nicht dringend.
 
-```java
-eventPublisher.publishEvent(EntityChangedEvent.root(
-        ChangeType.UPDATED, EntityType.WORK_ORDER, workOrder.getId(),
-        company.getId(), changedFieldNames, CurrentActor.userIdOrNull()));
-```
+Alles andere — Bedingungen, Feldfilter, Metadaten, GUI — folgt von selbst.
 
-Vier Dinge, die dabei schiefgehen:
+### 2b — Eine semantische Änderungsart (größer)
 
-- **Company darf nicht null sein.** Der Engine-Einstieg verwirft ein Ereignis ohne Company mit
-  einer Log-Warnung, weil er sonst firmenübergreifend Regeln suchen würde.
-- **Publizieren, nicht selbst asynchron werden.** Der Listener ist `AFTER_COMMIT`; publiziert
-  wird mitten in der Transaktion. Wer selbst `@Async` davorsetzt, verliert die Ordnung.
-- **Der Akteur wird jetzt gelesen**, nicht später — `CurrentActor.userIdOrNull()` greift auf den
-  Security-Context zu, den es im Listener-Thread nicht mehr gibt.
-- **Folgeereignisse sind Kinder.** Löst eine Aktion selbst eine Änderung aus (Genehmigung legt
-  einen Auftrag an), dann `event.child(...)` statt `root(...)`: nur so bleiben `correlationId`
-  und `depth` erhalten, und nur so können Kaskadenschutz und „lief in dieser Kaskade schon"
-  überhaupt greifen.
+Für „genehmigt", „abgelehnt", „abgeschlossen", die in keiner Spalte stehen:
 
-Am besten direkt neben den bestehenden `webhookDispatchService.dispatchWebhook(...)`-Aufruf —
-das ist genau die Stelle, an der der Code schon sagt „hier ist etwas Bemerkenswertes passiert",
-und Company und Feld-Diff liegen dort bereits vor.
-
-### Schritt 2 — Feldnamen festlegen
-
-`changedFields` ist ein `Set<String>` und wird an zwei Stellen als Text verglichen: im
-Feldfilter der Regel und in `CHANGED_TO`. Konvention: **der Feldname der Entität in camelCase**,
-so wie das Java-Feld heißt (`status`, `dueDate`, `priority`, `assignedTo`). Wer aus einem
-vorhandenen `WOField.DUE_DATE` publiziert, muss also abbilden, nicht `name()` nehmen — sonst
-steht im Editor `DUE_DATE` und in der Anlagenregel daneben `status`.
-
-Nur Felder aufnehmen, die der Diff wirklich erkennt. Ein angebotenes Feld, das der Diff nie
-meldet, ist eine Bedingung, die nie zutrifft.
-
-### Schritt 3 — `loadTriggerEntity` und `LIVE_TRIGGERS`
-
-`AutomationRuleRunner.loadTriggerEntity`: ein `case` mehr, frisch per Id geladen (nicht aus dem
-Ereignis — es trägt bewusst keine Entität, weil die nach dem Commit veraltet sein könnte).
-
-`AutomationMetaService.LIVE_TRIGGERS`: ein Eintrag mit denselben `changedFields` wie in
-Schritt 2. Ab hier ist der Trigger im Editor wählbar.
-
-### Schritt 4 — Resolver für die neue Entitätsart
-
-Eine Klasse, `OperandResolver` implementieren, `@Component`:
-
-- `supports(subject)` — welche Pfade, Konvention `workOrder.status`, `workOrder.priority`, …
-- `describe(company)` — was der Editor anbietet: `valueType`, Operatoren, bei Enums die Werte.
-  `CHANGED_TO` **nur** für Felder, die der Diff aus Schritt 2 meldet.
-- `resolve(condition, context)` — der Wert, `null` wenn keiner da ist. `context.cached(...)`
-  benutzen; `enable_lazy_load_no_trans` ist an, jede unaufgelöste Assoziation kostet sonst eine
-  eigene Abfrage pro Bedingung.
-
-Dazu die i18n-Schlüssel. `OperandDescriptor.native_` leitet sie aus dem Pfad ab:
-`workOrder.status` → `automation_subject_workOrder_status`. Nur `en.ts` und `de.ts`, wie in
-[`i18n/translations/AGENTS.md`](../frontend/src/i18n/translations/AGENTS.md) beschrieben. Fehlt
-ein Schlüssel, steht der rohe Schlüsselname im Editor — sichtbar, aber hässlich.
-
-### Schritt 5 — Platzhalter
-
-`ActionParameters.PLACEHOLDERS` um `trigger.workOrder.id` usw. erweitern. Die Liste ist bewusst
-geschlossen: ein unbekannter Platzhalter ist ein Fehler, keine leere Zeichenkette. Sie wird
-außerdem im Metadaten-Dokument mitgeliefert, erscheint also automatisch als Hinweis unter jedem
-Textfeld, das Platzhalter tragen darf.
-
-Der Zugriff muss den Fall „falsche Entitätsart" beantworten. Vorbild ist `ActionParameters.asset`:
-es wirft mit klarer Meldung, statt `null` einzusetzen.
-
-### Schritt 6 — Reichweite der Aktionen prüfen
-
-Für jede der drei Aktionen entscheiden, ob sie mit dem neuen Trigger sinnvoll ist, und *im Code*
-sicherstellen, dass die Antwort sichtbar ist:
-
-- `CREATE_WORK_ORDER` — funktioniert überall, aber der Parameter `asset` bietet
-  `${trigger.asset.id}` an. Bei einem Auftrags-Trigger gehört dort ein anderer Vorschlag hin
-  (oder keiner).
-- `NOTIFY` — funktioniert überall; `notificationType` hat für jede `EntityType` einen Zweig.
-- `SET_CUSTOM_FIELD` — nur Anlagen. Entweder auf die neue Art erweitern oder die klare
-  Fehlermeldung stehen lassen.
-
-### Schritt 7 — Tests
-
-- Resolver-Test wie `RuleEvaluatorTest`: keine Spring-Kontext, Stub-Resolver, Vergleichslogik
-  als Funktion. Ein `@SpringBootTest` ist in Unit-Tests verboten
-  ([`api/src/test/java/com/grash/agents.md`](../api/src/test/java/com/grash/agents.md)).
-- `AutomationMetaServiceTest.distinguishWiredFromUnwired` zählt die lebenden Trigger. Die Zahl
-  **muss** mitwachsen — das ist die beabsichtigte Kopplung, nicht eine Unbequemlichkeit.
-- Der Dienst-Test des publizierenden Dienstes braucht `@Mock ApplicationEventPublisher`, sonst
-  NPE (so schon bei `AssetServiceTest` und `RequestServiceTest` passiert).
+1. `eventPublisher.publishEvent(EntityChangedEvent.root(...))` im Dienst, **innerhalb** der
+   Transaktion, Company gesetzt, Akteur über `CurrentActor.userIdOrNull()`.
+2. Eintrag in `AutomationMetaService.LIVE_SEMANTIC_TRIGGERS` als `ENTITY_TYPE:CHANGE_TYPE`.
+3. Prüfen, ob dieselbe Änderung schon als `UPDATED` gemeldet wird — dann feuern zwei Trigger für
+   ein Geschehen. Das ist zulässig und gewollt (die Regel wählt den passenden), muss aber beim
+   Testen bekannt sein.
+4. Löst die Aktion selbst eine Änderung aus, `event.child(...)` verwenden. Beispiel: die
+   Genehmigung einer Meldung legt einen Auftrag an.
+5. Test im Dienst braucht `@Mock ApplicationEventPublisher`.
 
 ### Checkliste
 
 ```
-[ ] publishEvent an der Änderungsstelle, innerhalb der Transaktion, Company gesetzt
-[ ] Folgeereignisse per event.child(...)
-[ ] changedFields in camelCase, nur wirklich erkannte Felder
-[ ] case in AutomationRuleRunner.loadTriggerEntity
-[ ] Eintrag in AutomationMetaService.LIVE_TRIGGERS
-[ ] Resolver mit supports/describe/resolve, CHANGED_TO nur für Diff-Felder
-[ ] i18n-Schlüssel in en.ts und de.ts
-[ ] Platzhalter in ActionParameters.PLACEHOLDERS
-[ ] Reichweite der drei Handler geprüft
-[ ] Tests: Resolver, LIVE_TRIGGERS-Zähler, @Mock ApplicationEventPublisher
-[ ] CLAUDE.md-Divergenztabelle: geänderte Upstream-Datei ergänzt
+2a  [ ] Zeile in TrackedEntities (Klasse erweitert CompanyAudit)
+    [ ] Platzhalter in ActionParameters
+    [ ] i18n für die wichtigsten Felder
+    [ ] Trigger-Zähler im AutomationMetaServiceTest
+2b  [ ] publishEvent im Dienst, in der Transaktion, Company + Akteur
+    [ ] Eintrag in LIVE_SEMANTIC_TRIGGERS
+    [ ] Folgeereignisse per event.child(...)
+    [ ] @Mock ApplicationEventPublisher im Dienst-Test
+    [ ] CLAUDE.md-Divergenztabelle, wenn eine Upstream-Datei berührt wurde
 ```
 
 ---
 
-## 3. Inventar der Kandidaten
+## 3. Was als nächstes ansteht
 
-Die natürliche Landkarte liegt schon vor: **jede `dispatchWebhook`-Stelle ist eine potenzielle
-Publikationsstelle.** Dort ist die Änderung fertig, die Company bekannt und der Feld-Diff oft
-schon berechnet. Dieselbe Liste ist in der App unter *Integrationen → Webhooks* sichtbar — ein
-brauchbares Werkzeug, um Use Cases zu sammeln, bevor eine Zeile Code entsteht.
+**1. Aktionen von der Anlage lösen.** Die Bedingungen können jetzt alles, die Aktionen nicht.
+Konkret: `${trigger.workOrder.…}`, `${trigger.request.…}`, `SET_CUSTOM_FIELD` für Aufträge, und
+`CustomFieldResolver` für die übrigen `CustomFieldEntityType`-Werte. Ohne das sind die zehn
+lebenden Trigger nur zur Hälfte nutzbar. **Der nächste Schritt.**
 
-| # | Stelle | Trigger | Diff vorhanden? | Aufwand | Anmerkung |
-|---|---|---|---|---|---|
-| 1 | `AssetService:789` `ASSET_STATUS_CHANGE` | ASSET / UPDATED | `{status}` | **erledigt** | Die lebende Stelle |
-| 2 | `AssetService:111` `NEW_ASSET` | ASSET / CREATED | — | XS | Resolver existiert schon. „Neue Anlage → Ersteinweisung anlegen" |
-| 3 | `WorkOrderService:140` `NEW_WORK_ORDER` | WORK_ORDER / CREATED | — | S | Braucht `WorkOrderResolver` + Platzhalter |
-| 4 | `WorkOrderService:454`+`458` (Statuswechsel) | WORK_ORDER / UPDATED bzw. CLOSED | `detectChangedFieldsFromEntity`, **inkl. STATUS** | S | Der wertvollste Auftrags-Trigger |
-| 5 | `WorkOrderService:218` (Patch-Pfad) | WORK_ORDER / UPDATED | `detectPatchDTOChangedFields`, 11 Felder, **ohne** Status | S | Siehe Falle A |
-| 6 | `RequestService:385` Genehmigung | REQUEST / APPROVED | — | M | Legt einen Auftrag an → Kindereignis, siehe Falle C |
-| 7 | `RequestService:447` Ablehnung | REQUEST / REJECTED | — | S | |
-| 8 | `RequestService:117`+`145` | REQUEST / CREATED | — | M | Zwei Pfade, siehe Falle B. Berührt die KI-Triage |
-| 9 | `PartService:555` + `PurchaseOrderController:241` | PART / UPDATED | `{quantity}` | M | „Mindestbestand unterschritten" braucht einen Vergleichsoperator (`LT`), den es noch nicht gibt |
-| 10 | `PartService:90` / `:124` | PART / CREATED bzw. UPDATED | `PartField` | S | Geringer Nutzen ohne #9 |
-| 11 | `ReadingController:190` Zählertrigger | — | — | M | `EntityType` hat kein `METER`. Und der Pfad legt schon selbst einen Auftrag an |
-| 12 | `CommentService:72` | WORK_ORDER / UPDATED | — | S | Sinnvoll nur mit einem Feld `workOrder.lastComment`, das es nicht gibt |
-| 13 | `LocationService:78` / `VendorService:55` | — | — | S | Braucht neue `EntityType`-Werte. Kein erkennbarer Use Case |
-| 14 | `WorkOrderService:283`, `PartService:227` (Löschungen) | — | — | — | **Nicht bauen.** `loadTriggerEntity` lädt frisch per Id; die Zeile ist weg |
-| 15 | `PURCHASE_ORDER_*` | PURCHASE_ORDER / APPROVED … | — | L | Upstream `//TODO`, es gibt gar keinen Dispatch. Publikationsstelle komplett neu |
-| 16 | `WORK_ORDER_OVERDUE` | — | — | L | Upstream `//TODO` **und** zeitbasiert → Konzept §10 Stufe 2, nicht hier |
+**2. Semantische Auslöser, mit Meldung genehmigt/abgelehnt zuerst.** Deckt ab, was die
+Alt-Engine noch tut, und verbindet sich mit der KI-Triage. Dabei entscheiden, ob die Triage ihr
+eigenes `RequestCreatedEvent` behält oder auf `EntityChangedEvent` umzieht — zwei
+Ereignismechanismen für dasselbe Geschehen sind eine Altlast in Zeitlupe.
 
-`EntityType` und `ChangeType` liegen als `VARCHAR(32)` in der Datenbank
-(`@Enumerated(EnumType.STRING)`), nicht als Ordinalzahl wie die Upstream-Enums. Ein neuer Wert
-ist also billig und darf auch **zwischen** bestehende Werte — anders als bei allem, was
-`2026_01_10_1768015926_enums_type.xml` auf `SMALLINT` umgestellt hat.
+**3. Zuweisung in `CREATE_WORK_ORDER`.** Solange `createdBy` leer bleibt, landet ein
+regelerzeugter Auftrag anonym in der Liste und benachrichtigt niemanden. Ein Parameter
+„zuweisen an" behebt die praktische Hälfte des offenen Akteur-Punkts.
 
-### Die vier Fallen im Detail
+**4. Danach Konzept §10 Stufe 2: Zeit als Auslöser.** Ab hier bringt kein weiterer reaktiver
+Trigger mehr so viel: „nichts ist passiert" ist der in der Praxis häufigste Auslöser, und kein
+Ereignis kann ihn liefern.
 
-**Falle A — Aufträge haben zwei Änderungspfade.** `update()` (Patch-DTO, Zeile 218) und
-`saveAndFlushWithWebhook()` (Entität, Zeile 454, aufgerufen aus dem Statuswechsel bei Zeile 904).
-Wer nur einen publiziert, hat einen Trigger, der bei der Hälfte der Änderungen feuert — das
-ist schlimmer als keiner, weil es sich wie ein sporadischer Fehler anfühlt.
-
-Dass `detectPatchDTOChangedFields` kein `STATUS` meldet, ist **kein Defekt**: `WorkOrderPatchDTO`
-trägt gar keinen Status, der Wechsel läuft ausschließlich über den eigenen Endpunkt. Der
-Patch-Pfad erkennt allerdings auch `archived` nicht (es gibt kein `WOField` dafür), ein
-ARCHIVED-Trigger braucht also seinen eigenen Vergleich.
-
-**Falle B — Meldungen entstehen auf zwei Wegen.** `create(request, company)` über die API und
-`create(request, company, requestPortal)` über das Meldeportal. Der Portalweg hat **keinen
-angemeldeten Benutzer**: `CurrentActor.userIdOrNull()` liefert `null` (korrekt, aber der Akteur
-im Protokoll bleibt leer), und die Company kommt aus dem Portal, nicht aus dem Benutzer.
-
-**Falle C — Genehmigung ist eine Kaskade.** `RequestService.approve` legt einen Auftrag an. Wenn
-REQUEST/APPROVED und WORK_ORDER/CREATED beide leben, kann eine Regel die andere auslösen. Genau
-dafür gibt es `depth`, `correlationId` und `alreadyRanInThisCascade` — aber nur, wenn das
-Auftrags-Ereignis mit `event.child(...)` publiziert wird. Mit `root(...)` beginnt eine neue
-Kaskade mit Tiefe 0, und der Schutz ist blind.
-
-**Falle D — die Alt-Engine läuft an denselben Stellen.** `RequestService.approve/reject` und der
-Auftragsabschluss rufen weiterhin `workflowService.run…`. Beide Engines feuern dann für dasselbe
-Geschehen. Das ist beabsichtigt (Konzept §4.1) und beim Testen leicht verwirrend: eine doppelt
-angelegte Aufgabe kann aus der Alt-Regel kommen. Das Lauf-Protokoll der neuen Engine zeigt nur
-ihre eigenen Läufe.
+Bewusst **nicht** geplant: Zählertrigger (`EntityType` hat kein `METER`, und der Pfad legt
+selbst schon einen Auftrag an), Standorte und Lieferanten (kein Use Case), Löschungen
+(`loadTriggerEntity` lädt frisch per Id — die Zeile ist weg).
 
 ---
 
-## 4. Empfohlene Reihenfolge
+## 4. Use Cases erheben
 
-**1. Aufträge (#3, #4, #5) — ein Arbeitsgang.** Größter Nutzen pro Aufwand: der Feld-Diff
-existiert, elf Felder plus Status, und Aufträge sind die Entität, um die sich der Betrieb dreht.
-Enthält zwingend `WorkOrderResolver`, `trigger.workOrder.*`-Platzhalter und beide
-Änderungspfade. Use-Case-Beispiele: „Auftrag auf Hoch → Schichtleitung benachrichtigen",
-„Auftrag abgeschlossen an kritischer Anlage → Prüfauftrag anlegen".
+Vier Fragen je Kandidat, in dieser Reihenfolge:
 
-**2. Meldungen (#6, #7, #8).** Deckt genau das ab, was die Alt-Engine heute noch tut, und
-verbindet sich mit der KI-Triage: die Triage schlägt eine Anlage vor, eine Regel könnte den
-Vorschlag verwerten. Hier zuerst entscheiden, ob die Triage ihr eigenes `RequestCreatedEvent`
-behält oder auf `EntityChangedEvent` umzieht — zwei Ereignismechanismen für dasselbe Geschehen
-sind eine Altlast in Zeitlupe.
+1. **Was löst aus?** Anlegen oder Feldänderung einer der fünf Entitäten — oder es ist eine
+   Zeitregel und damit Stufe 2.
+2. **Woran erkennt man den Fall?** Jetzt: jedes Feld der auslösenden Entität, plus Anlagen-
+   Merkmale. Wenn die Antwort „das weiß nur der Meister" ist, fehlt ein Datenfeld, und *das* ist
+   die Aufgabe.
+3. **Was soll passieren?** Auf die drei Aktionen abbilden — und deren Anlagen-Schieflage aus
+   §1.5 mitdenken.
+4. **Wer merkt es, wenn es ausbleibt?** Ohne Antwort ist die Regel Dekoration.
 
-**3. Vergleichsoperatoren, dann Teile (#9).** `LT` / `GT` / `LTE` / `GTE` im `RuleEvaluator`
-plus `NUMBER`-Behandlung. Erst danach ist „Mindestbestand unterschritten" ausdrückbar; ohne die
-Operatoren wäre der Trigger da und die Bedingung nicht formulierbar.
+Zwei Werkzeuge, die schon da sind:
 
-**4. Danach Konzept §10 Stufe 2 (Zeit als Auslöser).** Ab hier bringt ein weiterer reaktiver
-Trigger weniger als die erste Zeitregel: „nichts passiert" ist der Auslöser, der in der Praxis
-am häufigsten gebraucht wird, und kein Ereignis kann ihn liefern.
-
-Bewusst **nicht** empfohlen: #11 bis #16. Zählertrigger und Bestellungen sind teuer oder
-upstream unfertig, Standorte und Lieferanten haben keinen Use Case, Löschungen sind technisch
-nicht sinnvoll.
-
----
-
-## 5. Use Cases erheben, bevor gebaut wird
-
-Der Reihenfolge oben liegt eine Annahme über den Nutzen zugrunde, und die gehört geprüft. Vier
-Fragen je Kandidat, in dieser Reihenfolge:
-
-1. **Was löst aus?** Muss eine der Stellen aus dem Inventar sein — oder es ist eine Zeitregel
-   und damit Stufe 2.
-2. **Woran erkennt man den Fall?** Nur aus Feldern, die ein Resolver lesen kann oder die als
-   Merkmal existieren. Wenn die Antwort „das weiß nur der Meister" ist, fehlt ein Datenfeld,
-   und *das* ist die eigentliche Aufgabe.
-3. **Was soll passieren?** Auf die drei Aktionen abbilden. Was nicht abbildbar ist, ist ein
-   Handler — und damit eine bewusste Erweiterung, kein Nebenprodukt.
-4. **Wer merkt es, wenn es ausbleibt?** Ohne Antwort ist die Regel Dekoration. Mit Antwort steht
-   damit auch fest, wer die Regel bekommt und wer ins Lauf-Protokoll schaut.
-
-Zwei Werkzeuge, die dabei helfen und schon da sind:
-
-- **Die Webhook-Liste in der App** (*Integrationen → Webhooks*) ist eine vollständige,
-  gelesene Liste dessen, was das System überhaupt als Ereignis kennt.
 - **Das Lauf-Protokoll** (*Automatisierungsregeln → Läufe*) beantwortet „ist mein Ereignis
-  überhaupt angekommen?". Für einen neu verdrahteten Trigger: eine Regel ohne Bedingung mit
-  `NOTIFY` anlegen, Änderung auslösen, Protokoll ansehen. Kein Eintrag heißt: die
-  Publikationsstelle wurde nicht durchlaufen. Eintrag mit `SKIPPED` heißt: Ereignis da,
+  angekommen?". Kein Eintrag heißt: kein Ereignis. Eintrag mit `SKIPPED` heißt: Ereignis da,
   Bedingung nicht erfüllt. Das trennt die beiden Fehlerbilder, die sich sonst gleich anfühlen.
+- **Der Editor selbst.** Er zeigt nur, was die Engine wirklich kann: ausgegraute Trigger sind
+  nicht verdrahtet, und die Feldliste eines Auslösers enthält genau die Namen, die sein Diff
+  melden kann.

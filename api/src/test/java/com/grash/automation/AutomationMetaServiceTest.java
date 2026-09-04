@@ -2,6 +2,7 @@ package com.grash.automation;
 
 import com.grash.automation.action.ActionDescriptor;
 import com.grash.automation.action.ActionHandler;
+import com.grash.automation.capture.TrackedEntities;
 import com.grash.automation.dto.AutomationMetaDTO;
 import com.grash.automation.event.ChangeType;
 import com.grash.automation.event.EntityType;
@@ -39,7 +40,7 @@ class AutomationMetaServiceTest {
 
         @Override
         public List<OperandDescriptor> describe(Company company) {
-            return List.of(OperandDescriptor.native_("asset.status", "ENUM",
+            return List.of(OperandDescriptor.native_(EntityType.ASSET, "asset.status", "ENUM",
                     List.of(ConditionOperator.IS), List.of("DOWN")));
         }
 
@@ -111,19 +112,56 @@ class AutomationMetaServiceTest {
         }
 
         @Test
-        @DisplayName("are marked live only where a service actually publishes the event")
-        void distinguishWiredFromUnwired() {
+        @DisplayName("are live for every watched entity, without a list saying so")
+        void areDerivedFromTheWatchedEntities() {
             List<AutomationMetaDTO.Trigger> live = describe(true).triggers().stream()
                     .filter(AutomationMetaDTO.Trigger::live).toList();
 
-            // Only the asset status change is published so far. If this assertion fails after a
-            // new publish point was added, the fix is to extend LIVE_TRIGGERS and this number —
-            // that is the intended coupling, not an inconvenience.
-            assertEquals(1, live.size());
-            assertEquals(EntityType.ASSET, live.get(0).entityType());
-            assertEquals(ChangeType.UPDATED, live.get(0).changeType());
-            assertEquals(List.of("status"), live.get(0).changedFields(),
-                    "the editor may only offer field filters the diff can actually report");
+            // Creation and field change for each watched class, and nothing else — Hibernate
+            // reports every insert and every update, so no per-entity wiring decides this.
+            // If this number moves, TrackedEntities changed, which is the intended coupling.
+            assertEquals(TrackedEntities.all().size() * 2, live.size());
+            assertTrue(live.stream().allMatch(trigger ->
+                            trigger.changeType() == ChangeType.CREATED
+                                    || trigger.changeType() == ChangeType.UPDATED),
+                    "only the two change types a column diff can reveal are automatic");
+            assertTrue(live.stream().anyMatch(trigger -> trigger.entityType() == EntityType.ASSET
+                    && trigger.changeType() == ChangeType.UPDATED));
+        }
+
+        @Test
+        @DisplayName("a semantic change type stays unavailable until something publishes it")
+        void semanticChangeTypesAreNotAutomatic() {
+            // "Approved" is not visible in a column diff — only the service performing it knows
+            // that is what the update meant. Reported as not live rather than hidden, so a rule
+            // is refused rather than silently never firing.
+            assertTrue(describe(true).triggers().stream()
+                    .filter(trigger -> trigger.changeType() == ChangeType.APPROVED)
+                    .noneMatch(AutomationMetaDTO.Trigger::live));
+        }
+
+        @Test
+        @DisplayName("an update trigger offers only field names its diff can report")
+        void fieldFilterMatchesTheDiff() {
+            AutomationMetaDTO.Trigger assetUpdated = describe(true).triggers().stream()
+                    .filter(trigger -> trigger.entityType() == EntityType.ASSET
+                            && trigger.changeType() == ChangeType.UPDATED)
+                    .findFirst()
+                    .orElseThrow();
+
+            // The stub resolver describes exactly one asset field, so that is the only name the
+            // filter may offer. A name the diff never produces would be a filter that matches
+            // nothing — the failure this endpoint exists to prevent.
+            assertEquals(List.of("status"), assetUpdated.changedFields());
+        }
+
+        @Test
+        @DisplayName("a creation trigger offers no field filter at all")
+        void creationHasNoFieldFilter() {
+            assertTrue(describe(true).triggers().stream()
+                    .filter(trigger -> trigger.changeType() == ChangeType.CREATED)
+                    .allMatch(trigger -> trigger.changedFields().isEmpty()),
+                    "every field of a new record is new, so filtering on one says nothing");
         }
     }
 
