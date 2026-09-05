@@ -383,6 +383,15 @@ upstream FREE behaviour again. When syncing upstream, re-check `LicenseService`,
   The general form is worth keeping: **on this stack the api is the slow one, so anything that
   depends on it needs a waiting state rather than a deadline.**
   [`docs/mcp-server-konzept.md`](docs/mcp-server-konzept.md) §12.6.
+- **`restock` silently does nothing for a part flagged `nonStock`, and answers success.**
+  `PartService.restockPart` returns early on `part.isNonStock()`, after which
+  `POST /parts/{id}/restock` still responds `{"success": true, "message": "Restocked
+  successfully"}`. Upstream behaviour, found when a stock booking through the MCP server
+  appeared to work and changed nothing. Two more things in the same corner are worth knowing
+  before touching parts: `PartQuantity` is a *line item* on a work order or purchase order and
+  never touches stock, while stock lives in `Part.quantity`; and `PATCH /parts/{id}` **sets**
+  that level absolutely with no `PartTransaction`, whereas `restock` **adds** and records the
+  movement.
 - **The MCP tool scope cannot be set per client — open, and deliberately so.** `MCP_PROFILE`
   is one variable on one service, so every client sees the same tools; the design text promises
   a profile per use case and cannot deliver it from a single deployment. It costs nothing here,

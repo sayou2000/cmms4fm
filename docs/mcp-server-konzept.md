@@ -623,6 +623,70 @@ als Code.
 
 ---
 
+## 12a. Der falsche Schreibvorgang — die teuerste Fehlerklasse
+
+Beim ersten Schreibversuch über einen Agenten sollte Bestand auf ein Material gebucht werden.
+Gewählt wurde `patch_part_quantities_by_id`, der Aufruf meldete Erfolg, `updatedAt` änderte
+sich — und im CMMS blieb der Bestand unverändert. Kein Fehler des Modells: bei der Aufgabe
+„Bestand buchen" ist ein Werkzeug namens *part quantities* der beste Treffer, den die
+Werkzeugliste hergab.
+
+**Was tatsächlich passierte.** `PartQuantity` ist nicht der Bestand, sondern die *Positionszeile*
+eines Materials auf einem Arbeitsauftrag oder einer Bestellung (`@Schema`: „tracking parts on
+work orders and purchase orders"). Der Bestand ist `Part.quantity`. `PartQuantityService` fasst
+den Bestand nirgends an. Der Aufruf hat also sauber getan, was er sollte — an der falschen
+Entität. Das CMMS hat nicht gelogen, das Werkzeug hat sich falsch angekündigt.
+
+**Warum das die teuerste Fehlerklasse ist.** Ein falscher *Lesevorgang* liefert sichtbar falsche
+Daten; man merkt es. Ein falscher *Schreibvorgang* ändert einen anderen Datensatz und meldet
+Erfolg — man merkt es nicht, und die Berechtigungen schützen nicht davor: der Schlüssel-Benutzer
+*darf* Positionszeilen ändern. Least Privilege (§5.1) verhindert „darf nicht", nicht „falscher
+Datensatz". Damit hat auch §13.4 eine Grenze, die im Kundengespräch gehört: Zuschnitt der Rechte
+adressiert diesen Fehler nicht.
+
+**Und die Spec hilft hier nicht.** Der aufschlussreiche Satz steht als `@Schema` an der
+*Entität* `PartQuantity`; in die Werkzeugbeschreibung fließt aber der Request-Body ein, und der
+heißt `PartQuantityPatchDTO` mit dem Text „Part quantity fields to update". Eine allgemeine
+Regel „nimm die Beschreibung der Entität" hätte diesen Fall also nicht gerettet — geprüft und
+verworfen.
+
+### Zwei Antworten
+
+**Kuratieren, wo die API sich selbst missverständlich benennt.** Der Bereich hat jetzt Namen,
+die sagen, was sie anfassen: `restock_part` (bucht zu, mit Bewegungssatz), `update_part`
+(*setzt* den Bestand absolut, ohne Bewegungssatz), `update_part_line` (Positionszeile, kein
+Bestand), dazu `add_part_line` und `remove_part_line`. Der irreführende generierte Name
+`patch_part_quantities_by_id` existiert nicht mehr, weil ein kuratierter Name den generierten
+ersetzt.
+
+Mit dokumentiert ist die Falle darunter: `restockPart` steigt bei `part.isNonStock()` **still
+aus** und antwortet trotzdem „Restocked successfully". Genau das Material aus dem Test
+(`RLT Filter`) ist so markiert — auch mit dem richtigen Werkzeug wäre nichts passiert. Die
+Beschreibung sagt das jetzt und rät, den Datensatz danach zurückzulesen.
+
+**Und die Klasse absichern, nicht nur den Fall.** Rund 320 der 349 Werkzeuge sind nicht
+kuratiert; ihre Beschreibung ist eine Umschreibung von Methode und Pfad. Wo die Benennung der
+API in die Irre führt, erbt das Werkzeug die Irreführung. Deshalb tragen generierte
+*schreibende* Werkzeuge ohne eigenen Text jetzt einen Zusatz: dass nichts beschreibt, was sie
+ändern, dass die Entität hinter dem Pfad nicht sein muss, wonach ihr Name klingt, und dass ein
+Werkzeug mit echter Beschreibung vorzuziehen ist. Lesende bekommen ihn nicht — dort ist der
+Fehler sichtbar.
+
+Das ist Schadensbegrenzung, keine Lösung. Die Lösung ist Kuratierung, und die wächst mit dem
+Gebrauch: **jeder Fehlgriff eines Klienten ist ein Kandidat für die kuratierte Tabelle.** Genau
+dafür ist die zweite Schicht da (§4.3) — sie ist kein einmaliges Werk, sondern das Protokoll
+dessen, was schon einmal schiefging.
+
+### Was das für schreibende Klienten heißt
+
+Bis die kuratierte Abdeckung breiter ist, gilt für alles Schreibende: entweder ein kuratiertes
+Werkzeug benutzen, oder den Datensatz nach dem Schreiben zurücklesen und prüfen. Für ein
+Deployment, das nur wenige Schreibvorgänge braucht, ist `READ_ONLY=true` plus ein
+`TOOLS_ALLOW` mit genau den erlaubten Namen der schärfere Zuschnitt — dann ist die generierte
+Schreiboberfläche gar nicht erreichbar.
+
+---
+
 ## 13. Engmaschige Steuerung — **offen**
 
 Status: **offen, bewusst nicht gebaut.** Diese Instanz ist ein Home-Lab, das herausfinden soll,

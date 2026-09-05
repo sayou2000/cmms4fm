@@ -191,3 +191,49 @@ test('a genuinely unknown profile still names the value and the alternatives', (
     return true;
   });
 });
+
+test('the parts area names what each tool actually touches', () => {
+  // A request to book stock onto a part chose patch_part_quantities_by_id — the closest match
+  // by name — and changed a work order line while reporting success. Stock and part lines are
+  // different entities and the API's naming does not say so, so the tools have to.
+  const catalog = catalogFor({ PROFILE: 'full' });
+
+  const restock = catalog.byName.get('restock_part');
+  assert.ok(restock, 'the endpoint that actually books stock must be curated');
+  assert.equal(restock.operation.path, '/parts/{id}/restock');
+  assert.match(restock.description, /add\*\* to the current stock|amount to \*\*add\*\*/);
+  assert.match(restock.description, /nonStock/, 'the silent no-op has to be named');
+
+  const line = catalog.byName.get('update_part_line');
+  assert.ok(line, 'the misleading one must be renamed away from "part quantity"');
+  assert.equal(line.operation.path, '/part-quantities/{id}');
+  assert.match(line.description, /does not change the stock level/);
+  assert.match(line.description, /restock_part/, 'it must point at the right tool');
+
+  // The generated name is gone, so the misleading match is no longer reachable.
+  assert.equal(catalog.byName.get('patch_part_quantities_by_id'), undefined);
+
+  assert.match(catalog.byName.get('update_part')!.description, /sets\*\* the absolute stock/);
+});
+
+test('a generated writing tool admits it does not know what it changes', () => {
+  const catalog = catalogFor({ PROFILE: 'full' });
+  // Only where the document says nothing. The six endpoints that do carry a summary keep it
+  // and need no caution — the warning is about absent knowledge, not about writing as such.
+  const undocumented = (tool: (typeof catalog.visible)[number]) =>
+    !tool.operation.summary && !tool.operation.description;
+  const writes = catalog.visible.filter(
+    (tool) => !tool.curated && !tool.classification.readOnly && undocumented(tool),
+  );
+  const reads = catalog.visible.filter((tool) => !tool.curated && tool.classification.readOnly);
+
+  assert.ok(writes.length > 50, 'the generated writing surface is the risky part');
+  for (const tool of writes) {
+    assert.match(tool.description, /writing operation and nothing describes what it changes/,
+      `${tool.name} should carry the caution`);
+  }
+  // Reads do not need it: a wrong read is visible, a wrong write is not.
+  for (const tool of reads) {
+    assert.doesNotMatch(tool.description, /writing operation and nothing describes/);
+  }
+});

@@ -130,11 +130,50 @@ export const CURATED_TOOLS: Record<string, CuratedTool> = {
   'POST /parts/search': {
     name: 'search_parts',
     description:
-      'Find spare parts and stock items. Same filter shape as search_assets; quantity and cost fields are numeric. Every field of the body is optional; `{}` lists the first page.',
+      'Find spare parts and stock items. Same filter shape as search_assets; quantity and cost fields are numeric. Every field of the body is optional; `{}` lists the first page. `quantity` is the stock level — the part lines on work orders are a different entity, see update_part_line.',
   },
   'GET /parts/{id}': {
     name: 'get_part',
-    description: 'Read one part: name, stock quantity, minimum quantity, cost and assigned assets.',
+    description:
+      'Read one part: name, stock quantity, minimum quantity, cost and assigned assets. `quantity` is the stock level and `nonStock: true` means this part does not carry stock at all.',
+  },
+  // The three tools below exist because this corner of the API misleads by its own naming, and
+  // a model that guesses here writes to the wrong record and is told it succeeded. A real
+  // attempt to book stock onto a part picked `patch_part_quantities_by_id` — the best match by
+  // name — and silently changed a work order line instead.
+  'POST /parts/{id}/restock': {
+    name: 'restock_part',
+    description: [
+      'Book stock onto an existing part. This is the operation for "we received more of this".',
+      '`body.quantity` is the amount to **add** to the current stock, not the new total, and it must be positive; `body.description` is recorded with the movement.',
+      'It is the only way that leaves a stock-movement record.',
+      'It does nothing to a part flagged `nonStock` and still answers success, so read the part back with get_part to confirm the level actually changed.',
+    ].join(' '),
+  },
+  'PATCH /parts/{id}': {
+    name: 'update_part',
+    description: [
+      "Change a part's master data (name, description, cost, minimum quantity, assigned assets).",
+      '`quantity` here **sets** the absolute stock level rather than adding to it, and leaves no stock-movement record — to book stock in, use restock_part instead.',
+    ].join(' '),
+  },
+  'PATCH /part-quantities/{id}': {
+    name: 'update_part_line',
+    description: [
+      'Change how many of a part are booked onto **one work order or purchase order**.',
+      'This is a line item, not inventory: it does not change the stock level of the part, and the CMMS stock list will look unchanged afterwards.',
+      'To change stock use restock_part (adds, with a movement record) or update_part (sets the level directly).',
+    ].join(' '),
+  },
+  'POST /part-quantities': {
+    name: 'add_part_line',
+    description:
+      'Book a part onto a work order or purchase order as a line item, with a quantity. Does not change the stock level of the part; see restock_part for that.',
+  },
+  'DELETE /part-quantities/{id}': {
+    name: 'remove_part_line',
+    description:
+      'Remove a part line from a work order or purchase order. Does not change the stock level of the part.',
   },
   'POST /requests/search': {
     name: 'search_requests',

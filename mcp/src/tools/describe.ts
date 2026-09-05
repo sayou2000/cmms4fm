@@ -115,6 +115,16 @@ export function synthesiseDescription(operation: Operation): string {
     parts.push(
       'Description generated from the OpenAPI document, which carries no text for this endpoint.',
     );
+    if (!classify(operation).readOnly) {
+      // A wrong read returns visibly wrong data. A wrong write changes a different record and
+      // reports success, which is what happened when a request to book stock onto a part
+      // landed on PATCH /part-quantities/{id} — a work order line, not inventory, and named
+      // closely enough to be the best match. The generated layer cannot know the difference,
+      // so it should say that rather than sound as confident as a curated tool.
+      parts.push(
+        'This is a writing operation and nothing describes what it changes, so the entity behind the path may not be what its name suggests. Prefer a tool with a written description, or read the record back afterwards to confirm.',
+      );
+    }
   }
 
   return parts.join(' ');
