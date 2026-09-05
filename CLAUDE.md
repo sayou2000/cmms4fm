@@ -383,6 +383,15 @@ upstream FREE behaviour again. When syncing upstream, re-check `LicenseService`,
   The general form is worth keeping: **on this stack the api is the slow one, so anything that
   depends on it needs a waiting state rather than a deadline.**
   [`docs/mcp-server-konzept.md`](docs/mcp-server-konzept.md) §12.6.
+- **The MCP tool scope cannot be set per client — open, and deliberately so.** `MCP_PROFILE`
+  is one variable on one service, so every client sees the same tools; the design text promises
+  a profile per use case and cannot deliver it from a single deployment. It costs nothing here,
+  where the point is to find out which functions matter and `full` is the right setting, but it
+  is the first thing a customer would ask for.
+  [`docs/mcp-server-konzept.md`](docs/mcp-server-konzept.md) §13 records the three options with
+  their costs, what can be promised today without new code, and what a customer would want
+  beyond it. Read it before promising anything about access control, and note the distinction it
+  turns on: a profile governs what a model *sees*, the key's user governs what may *happen*.
 - **One API key serves every MCP client.** The rule the design sets is one minimally permitted
   CMMS *user* per lasting client, because the profile only governs what a model can see while
   the key's user governs what it may do. Read-only use makes this cheap to defer; **switching

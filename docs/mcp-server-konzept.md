@@ -1,8 +1,9 @@
 # MCP-Server als universelles Addon für cmms4fm
 
 Status: **umgesetzt** — Stufe 0 und Stufe 1 stehen als `mcp/`. Was der Bau am Konzept
-korrigiert hat und was noch offen ist, steht in §12; die Betriebsanleitung in
-[`mcp/README.md`](../mcp/README.md).
+korrigiert hat, steht in §12; **§13 ist offen**: der Werkzeug-Zuschnitt gilt heute pro Instanz
+statt pro Klient, und dort steht, was das für einen Kundeneinsatz bedeutet. Betriebsanleitung
+in [`mcp/README.md`](../mcp/README.md).
 Datum: 2026-09-04 (Konzept und Umsetzung)
 Bezogener Code: `mcp/**` (der Server), `api/` (REST-Oberfläche, `/v3/api-docs/atlas-cmms`,
 `ApiKeyAuthFilter`), `docker/nginx/**`, `docker-compose.yml`, `.github/workflows/deploy.yml`,
@@ -619,3 +620,100 @@ einen authentifizierten Aufruf, und der gehört erst dazu, wenn die beiden offen
 Prompts liegen als Vorlagen bereit; der Dokumenten-Prompt zäunt den fremden Text ausdrücklich
 ein und verbietet Schreibfolgen — die Regel aus `ki-meldungs-triage.md`, hier als Text statt
 als Code.
+
+---
+
+## 13. Engmaschige Steuerung — **offen**
+
+Status: **offen, bewusst nicht gebaut.** Diese Instanz ist ein Home-Lab, das herausfinden soll,
+welche Funktionen taugen — dafür ist „alles sichtbar" richtig, und `PROFILE=full` ist die
+passende Einstellung. Der Abschnitt existiert für die andere Frage: *was könnte man einem
+Kunden zusagen, der zu Recht feinmaschig steuern will, und was müsste man dafür bauen?*
+
+### 13.1 Die drei Regler, und was sie wirklich regeln
+
+Die Verwirrung, aus der dieser Abschnitt entstand, liegt daran, dass §4.3 und §4.4 zwei
+verschiedene Dinge gleich klingen lassen. Getrennt:
+
+| Regler | Beantwortet | Reichweite | Wer entscheidet |
+|---|---|---|---|
+| **Benutzer, dem der Schlüssel gehört** | Was *darf* geschehen | pro Klient | das CMMS |
+| **`READ_ONLY`, `TOOLS_DENY`** | Was ist im Deployment ausgeschlossen | pro Instanz, nicht anhebbar | der Betreiber |
+| **`PROFILE`** | Was *sieht* das Modell | pro Instanz | der Betreiber |
+
+**Ein Profil gewährt nichts.** Wer `full` sieht und einen nur-lesenden Schlüssel vorlegt,
+bekommt bei jedem Schreibversuch ein 403 vom CMMS. Das Profil ist eine Auswahlhilfe: bei 349
+Werkzeugen greift ein Sprachmodell zuverlässig daneben, bei 29 nicht. Die scharfe Kontrolle ist
+und bleibt der Benutzer hinter dem Schlüssel (§4.2, §5.1).
+
+### 13.2 Die Lücke
+
+§4.3 verspricht „ein neuer Use Case wählt sein Profil, nicht seinen Serverbau". Mit *einer*
+Instanz und *einer* Umgebungsvariable kann er das nicht: das Profil gilt für alle Klienten
+gleichzeitig. Für zwei Klienten mit unterschiedlichem Bedarf ist die Differenzierung damit
+wirkungslos.
+
+Und §4.4/§5.2 werden dadurch ungenau: die „zwei unabhängigen Riegel" für nicht
+vertrauenswürdigen Input — lesendes Profil *und* lesender Schlüssel — sind bei einer geteilten
+Instanz nur einer, nämlich der Schlüssel. Der Satz stimmt erst wieder, wenn ein Klient sein
+eigenes Profil bekommen kann.
+
+### 13.3 Die Optionen, mit ihren Kosten
+
+**A — Mehrere Deployments desselben Images.** Ein zweiter `mcp`-Dienst mit eigenem
+`MCP_PROFILE` und eigener Route. Zehn Zeilen `docker-compose.yml`, kein Code, je Dienst ~80 MB.
+Für zwei oder drei Klienten unauffällig; ab dem vierten ist es Verwaltung.
+
+**B — Profil in der URL (empfohlen).** Ein Dienst, aber `/mcp/assets`, `/mcp/core-readonly`,
+`/mcp/workorders`. Jeder Klient bekommt die URL zu seiner Aufgabe; in n8n ist das ein Feld im
+Node, sonst nichts. Unbedenklich, weil ein Profil ohnehin nichts gewährt: der Klient kann damit
+nichts erreichen, was sein Schlüssel nicht schon erlaubt. `READ_ONLY` und `TOOLS_DENY` bleiben
+die Obergrenze, die kein Klient anheben kann, und `MCP_PROFILE` wird die Voreinstellung für
+`/mcp` ohne Zusatz.
+
+Der Aufwand ist klein, weil die Route **schon funktioniert**: nginx reicht `/mcp/...`
+unverändert durch, und der Server schneidet das Präfix bereits ab, `/mcp/assets` kommt intern
+als `/assets` an. Zu bauen wäre nur: den Pfad als Profilwahl deuten und den Katalog je Profil
+bauen (~15 ms je Profil, einmalig, danach im Speicher).
+
+**C — Profil an den Schlüssel binden. Verworfen.** Der Server bräuchte eine eigene Tabelle
+„welcher Schlüssel darf was". Das ist das zweite Berechtigungssystem aus den Nicht-Zielen (§1),
+und zwei Wahrheiten über Rechte, die auseinanderlaufen können, sind schlimmer als eine grobe.
+Wer einem Klienten etwas verbieten will, gibt seinem CMMS-Benutzer die Rolle, die es nicht darf.
+
+### 13.4 Was man einem Kunden heute zusagen kann
+
+Ohne eine Zeile neuen Code, weil es aus dem Entwurf oder aus dem CMMS kommt:
+
+| Anforderung | Wie sie erfüllt ist |
+|---|---|
+| Least Privilege je Klient | Ein eigener CMMS-Benutzer mit eigenem Schlüssel; Rolle und Berechtigungen sind die des Kunden, nicht unsere |
+| Mandantentrennung | Automatisch: der Schlüssel löst zu einem Benutzer mit Company auf, das CMMS filtert |
+| Nachvollziehbarkeit | Zwei Ebenen — die Audit-Zeile je Tool-Aufruf (Zeit, Werkzeug, Endpunkt, Status, gehashter Schlüssel) *und* die Historie im CMMS selbst, weil der Aufruf als der echte Benutzer läuft |
+| Schlüssel befristen und sperren | `ApiKey` trägt `expiresAt` und `revokedAt`, `ApiKeyAuthFilter` prüft beide; Rotation gibt es im Controller |
+| Schreibschutz je Deployment | `READ_ONLY` blendet jedes schreibende Werkzeug aus, unabhängig vom Profil |
+| Missbrauchsbremse | Rate-Limit pro Schlüssel |
+| Kein Datenabfluss über den Server | Der Server ruft kein Modell und sendet nichts nach außen; wohin Daten gehen, entscheidet allein der Klient (§1, §5.5) |
+
+### 13.5 Was ein Kunde zusätzlich verlangen wird — und was es kostet
+
+| Anforderung | Stand | Was zu bauen wäre |
+|---|---|---|
+| Werkzeug-Zuschnitt **je Klient** | fehlt | Option B, klein |
+| Rate-Limit **je Klient** unterschiedlich | teilweise: die Zählung ist pro Schlüssel, der Grenzwert gilt für alle | Grenzwert je Profil oder je Route mitgeben — klein, sinnvoll zusammen mit B |
+| Rate-Limit über mehrere Replikate | fehlt | Der Zähler lebt im Prozess; zwei Replikate erlauben das Doppelte. Geteilter Zustand wäre nötig — und würde die Zustandslosigkeit aufgeben, die §4.1 trägt |
+| Netzgrenze vor `/mcp` | fehlt | Die Route ist öffentlich; ohne Schlüssel ist nur die Werkzeugliste sichtbar, die die OpenAPI-Spec ohnehin öffentlich preisgibt. IP-Allowlist oder mTLS gehören an nginx, nicht in den Server |
+| Freigabeschritt vor Schreibvorgängen | nicht Sache des Servers | Gehört in den Klienten (n8n-Flow) oder ins CMMS-Frontend. Im Server wäre es Geschäftslogik (§1) |
+| Erlauben/Verbieten je Schlüssel im Server | bewusst nicht | Siehe C oben — gehört ins Rollenmodell des CMMS |
+
+**Die ehrliche Kurzfassung fürs Kundengespräch:** Feinmaschige Steuerung entsteht hier nicht im
+MCP-Server, sondern im **Rollenmodell des CMMS** — ein Benutzer je Klient, minimal berechtigt.
+Der Server trägt dazu drei Dinge bei, die man zusagen kann: er kann nie mehr als der vorgelegte
+Schlüssel, er protokolliert jeden Aufruf, und er lässt sich pro Deployment lesend festnageln.
+Was ihm fehlt, ist der Werkzeug-Zuschnitt je Klient, und der ist klein nachzurüsten.
+
+### 13.6 Wann das dran ist
+
+Wenn ein zweiter Klient mit anderem Bedarf dauerhaft läuft, oder vor dem ersten schreibenden
+Flow — je nachdem, was zuerst eintritt. Bis dahin ist `full` mit einem lesenden Schlüssel die
+richtige Einstellung für ein Labor, das herausfinden soll, welche Funktionen überhaupt taugen.

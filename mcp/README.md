@@ -156,6 +156,17 @@ the profile; a deny always wins.
 
 ### Choosing a profile
 
+**The profile is a property of the deployment, not of the client.** One `MCP_PROFILE` applies
+to everyone connecting to this service, so two clients with different needs cannot currently
+be given different tool sets from one deployment — run a second service with its own profile,
+or see [`docs/mcp-server-konzept.md`](../docs/mcp-server-konzept.md) §13, which records the
+options and is deliberately still open.
+
+And whatever the profile, it grants nothing: a client seeing `full` with a read-only key gets a
+403 from the CMMS on every write. The profile decides what a model *sees* — 29 tools are chosen
+between well, 349 are not — while the key's user decides what may *happen*.
+
+
 - **A client that processes input nobody vouched for** — an uploaded PDF, an incoming email:
   `PROFILE=core-readonly` **and** a key belonging to a read-only user. Two independent locks,
   because prompt injection through a document has to fail even if one of them is wrong. This
