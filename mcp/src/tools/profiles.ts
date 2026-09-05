@@ -80,8 +80,15 @@ export const PROFILES: Record<string, Profile> = {
   },
 };
 
+/**
+ * Case- and whitespace-insensitive on purpose. Environment variables are conventionally
+ * written in upper case, so `PROFILE=FULL` is what a person naturally types — and it used to
+ * throw, which stopped the server from ever becoming ready while its health endpoint blamed
+ * the CMMS for not answering. A profile name is a word, not a token to be matched byte for
+ * byte.
+ */
 export function resolveProfile(name: string): Profile {
-  const profile = PROFILES[name];
+  const profile = PROFILES[name.trim().toLowerCase()];
   if (!profile) {
     throw new Error(
       `Unknown PROFILE ${JSON.stringify(name)}. Available: ${Object.keys(PROFILES).join(', ')}`,

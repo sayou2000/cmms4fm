@@ -30,6 +30,12 @@ export interface ServerState {
   readyAt?: Date;
   /** Where the document came from, once it arrived. */
   origin?: string;
+  /**
+   * Set when the deployment itself is wrong — a profile that does not exist, say. Waiting
+   * cannot fix it and neither can restarting, so retrying stops and this is reported instead
+   * of a spurious "still waiting for the CMMS".
+   */
+  configError?: string;
 }
 
 export function newState(): ServerState {
@@ -51,6 +57,13 @@ export function describeState(state: ServerState): Record<string, unknown> {
       tools: state.catalog.visible.length,
       hiddenTools: state.catalog.hidden.length,
       api: state.catalog.document,
+    };
+  }
+  if (state.configError) {
+    return {
+      status: 'misconfigured',
+      problem: state.configError,
+      fix: 'Correct the environment of this service and redeploy. Restarting changes nothing.',
     };
   }
   return {

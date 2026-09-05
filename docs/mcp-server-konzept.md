@@ -589,6 +589,20 @@ Verifiziert, nicht nur behauptet: der gebaute Server wurde gegen ein totes CMMS 
 am Leben, meldete `503 {"status":"starting","waitingFor":…}`, und wurde 15 Sekunden nachdem das
 CMMS auftauchte von selbst bereit. Ein Test hält denselben Ablauf fest.
 
+**Und sofort der Folgefehler, der dieselbe Wurzel hat.** Nach dem Fix meldete `/healthz` fünf
+Minuten lang „warte auf die OpenAPI-Spec" — obwohl die Spec beim ersten Versuch angekommen war.
+Der wahre Grund stand im `lastError`: `MCP_PROFILE=FULL` wurde case-sensitiv verglichen und
+schlug fehl. „Nie aufgeben" hatte damit einen **Konfigurationsfehler wie einen vorübergehenden
+Ausfall behandelt** und ewig wiederholt, mit einer Meldung, die auf den falschen Verursacher
+zeigte.
+
+Daraus die Ergänzung zur Regel: *unerreichbarer Nachbar* → ewig warten. *Diese Konfiguration
+kann nie funktionieren* → aufhören und es sagen. `/healthz` unterscheidet jetzt
+`status: "starting"` von `status: "misconfigured"` samt Problem und Abhilfe, ein Tool-Aufruf
+antwortet `not_configured` statt `temporarily_unavailable` (also `retryable: false`), und
+Profilnamen werden als Wort verglichen, nicht Byte für Byte — `FULL`, `full` und `Full` sind
+dasselbe Profil.
+
 **Was das über die Nachbarschaft sagt:** dass `mcp` überhaupt auf `service_started` statt
 `service_healthy` wartet, liegt daran, dass der api-Healthcheck nie grün wird (`CLAUDE.md`,
 „Open items"). Der Einzeiler dort würde diese Abhängigkeit ehrlich machen — dann wartet Compose

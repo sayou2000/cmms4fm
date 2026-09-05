@@ -3,6 +3,7 @@ import type { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { loadConfig, type Config } from './config.js';
 import { createLogger, type Logger } from './logger.js';
 import { loadSpec } from './openapi/loader.js';
+import { resolveProfile } from './tools/profiles.js';
 import { RateLimiter } from './ratelimit.js';
 import type { ServerContext } from './server.js';
 import { newState } from './state.js';
@@ -40,6 +41,19 @@ async function main(): Promise<void> {
     }),
   };
 
+  // Checked before anything is served, because a profile that does not exist is a typo in
+  // the deployment, not a slow neighbour. Doing it here rather than deep inside the
+  // catalogue build is the difference between "misconfigured, here is the value and the
+  // valid list" and a server that waits for a document it already has.
+  try {
+    resolveProfile(config.profile);
+  } catch (error) {
+    context.state.configError = error instanceof Error ? error.message : String(error);
+    logger.error('this deployment cannot serve anything until its configuration is fixed', {
+      problem: context.state.configError,
+    });
+  }
+
   let stdioServer: Server | undefined;
 
   if (config.transport === 'stdio') {
@@ -55,8 +69,9 @@ async function main(): Promise<void> {
   }
 
   // Not awaited: the transports above are already serving, and this runs for as long as the
-  // process does.
-  void keepCatalogueCurrent(context, stdioServer);
+  // process does. Skipped entirely when the configuration is broken — retrying a typo is
+  // just noise, and /healthz already says what is wrong.
+  if (!context.state.configError) void keepCatalogueCurrent(context, stdioServer);
 }
 
 /**
@@ -78,7 +93,21 @@ async function keepCatalogueCurrent(context: ServerContext, stdioServer?: Server
 
     try {
       const spec = await loadSpec(config, logger);
-      const catalog = buildCatalog(spec.document, config, logger);
+      // Two failure classes live in this block and they need different answers: fetching the
+      // document can fail because the CMMS is not up yet, which waiting fixes; building the
+      // catalogue from it fails only because of how this service is configured, which waiting
+      // never fixes. Conflating them once had the server retry `PROFILE=FULL` for five
+      // minutes while reporting that it was waiting for a document it had already read.
+      let catalog;
+      try {
+        catalog = buildCatalog(spec.document, config, logger);
+      } catch (error) {
+        context.state.configError = error instanceof Error ? error.message : String(error);
+        logger.error('the OpenAPI document loaded, but this deployment cannot use it', {
+          problem: context.state.configError,
+        });
+        return;
+      }
       const before = context.state.catalog?.visible.map((tool) => tool.name).join(',');
       const after = catalog.visible.map((tool) => tool.name).join(',');
 

@@ -172,3 +172,22 @@ test('path parameters are required arguments, query parameters follow the docume
 test('an unknown profile fails at boot rather than serving nothing', () => {
   assert.throws(() => catalogFor({ PROFILE: 'nope' }), /Unknown PROFILE/);
 });
+
+test('a profile name is matched by word, not by case', () => {
+  // PROFILE=FULL is what a person naturally types into an environment variable, and it used
+  // to throw — which stopped the server becoming ready while its health endpoint blamed the
+  // CMMS for a document it had already read.
+  for (const spelling of ['full', 'FULL', 'Full', ' full ']) {
+    const catalog = catalogFor({ PROFILE: spelling });
+    assert.equal(catalog.profile.name, 'full', `PROFILE=${JSON.stringify(spelling)} should work`);
+  }
+  assert.equal(catalogFor({ PROFILE: 'CORE-READONLY' }).profile.name, 'core-readonly');
+});
+
+test('a genuinely unknown profile still names the value and the alternatives', () => {
+  assert.throws(() => catalogFor({ PROFILE: 'reedonly' }), (error: Error) => {
+    assert.match(error.message, /Unknown PROFILE "reedonly"/);
+    assert.match(error.message, /readonly, core, core-readonly, assets, workorders, full/);
+    return true;
+  });
+});

@@ -75,6 +75,15 @@ export function createMcpServer(context: ServerContext): Server {
     const catalog = context.state.catalog;
     if (!catalog) {
       logger.audit({ event: 'tool_not_ready', tool: name, sessionId: extra.sessionId });
+      // Retrying helps in one of these cases and not the other, so they must not read alike.
+      if (context.state.configError) {
+        return errorResult(
+          failure(
+            'not_configured',
+            `this MCP server is misconfigured and offers no tools: ${context.state.configError}`,
+          ),
+        );
+      }
       return errorResult(
         failure(
           'temporarily_unavailable',

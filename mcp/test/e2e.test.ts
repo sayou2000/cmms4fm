@@ -405,3 +405,51 @@ test('a CMMS that is not there yet does not kill the server', async () => {
     await starting.close();
   }
 });
+
+test('a misconfigured deployment says so instead of blaming the CMMS', async () => {
+  // The other half of "never give up": waiting fixes a slow neighbour, and never fixes a typo.
+  // Reported alike, the server retried PROFILE=FULL for five minutes while claiming it was
+  // still waiting for a document it had already read.
+  const { newState } = await import('../src/state.js');
+  const config = loadConfig({
+    CMMS_BASE_URL: `http://127.0.0.1:${cmmsPort}`,
+    PORT: '0',
+    HOST: '127.0.0.1',
+  } as NodeJS.ProcessEnv);
+  const logger = createLogger(config, { write: () => undefined });
+  const broken = await startHttpTransport({
+    config,
+    logger,
+    state: { ...newState(), configError: 'Unknown PROFILE "reedonly". Available: readonly, …' },
+    rateLimiter: new RateLimiter({ perMinute: 0, burst: 1 }),
+  });
+
+  try {
+    const health = await fetch(`http://127.0.0.1:${broken.port}/healthz`);
+    assert.equal(health.status, 503);
+    const payload = (await health.json()) as { status: string; problem: string; fix: string };
+    assert.equal(payload.status, 'misconfigured');
+    assert.match(payload.problem, /Unknown PROFILE/);
+    assert.match(payload.fix, /Restarting changes nothing/);
+
+    const client = new Client({ name: 'e2e-broken', version: '0' });
+    await client.connect(
+      new StreamableHTTPClientTransport(new URL(`http://127.0.0.1:${broken.port}/mcp`), {
+        requestInit: { headers: { 'x-api-key': 'k' } },
+      }),
+    );
+    try {
+      const result = await client.callTool({ name: 'get_asset', arguments: { id: 1 } });
+      const reason = JSON.parse((result.content as { text: string }[])[0]!.text) as {
+        kind: string;
+        retryable: boolean;
+      };
+      assert.equal(reason.kind, 'not_configured');
+      assert.equal(reason.retryable, false, 'an agent must not retry a typo');
+    } finally {
+      await client.close();
+    }
+  } finally {
+    await broken.close();
+  }
+});

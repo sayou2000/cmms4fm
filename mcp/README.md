@@ -256,7 +256,22 @@ found in upstream" — a stopped `mcp` service would black out the whole domain.
 | Endpoint | Answers | Used by |
 |---|---|---|
 | `GET /livez` | `200` as soon as the process is listening | the container healthcheck |
-| `GET /healthz` (`/readyz`) | `200` once the OpenAPI document is loaded; `503` with the reason, the attempt count and how long it has waited before that | a human, a monitor |
+| `GET /healthz` (`/readyz`) | `200` once tools can be served; `503` otherwise, saying which of the two reasons it is | a human, a monitor |
+
+`/healthz` distinguishes the two states that look alike and are not:
+
+```jsonc
+{ "status": "starting", "waitingFor": "the OpenAPI document from the CMMS",
+  "attempts": 3, "waitingSeconds": 42, "lastError": "fetch failed" }   // waiting fixes this
+
+{ "status": "misconfigured", "problem": "Unknown PROFILE \"FULL\". Available: …",
+  "fix": "Correct the environment of this service and redeploy." }     // waiting never will
+```
+
+Read that endpoint first whenever a client reports no tools. It once claimed to be waiting on
+the CMMS for five minutes while the real problem was `MCP_PROFILE=FULL` being matched case
+sensitively — the document had loaded on the first try. Profile names are now matched by word,
+and a configuration error stops the retrying and says so.
 
 Conflating the two once took the service down. The server used to load the document *before*
 listening, gave up after 150 seconds and exited; Coolify restarted it into the same race and
