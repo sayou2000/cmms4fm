@@ -552,18 +552,49 @@ verlorengeht.
 
 - Der **api**-Healthcheck war noch nie grün (`CLAUDE.md`, „Open items"): `WebSecurityConfig`
   gibt `/actuator/health/readiness` nicht frei, Spring antwortet dauerhaft 403.
-- Der **mcp**-Healthcheck ist selbstgebaut und hat einen Konstruktionsfehler: `start-period`
-  steht auf 60 Sekunden, aber der Server lauscht bewusst erst, wenn er die OpenAPI-Spec geladen
-  hat — und die kommt vom api, der bis zu 150 Sekunden braucht. Beim Kaltstart des ganzen Stacks
-  ist mcp also planmäßig einige Minuten „unhealthy", und ein Aufrufer sieht in der Zeit Traefiks
-  „no available server" statt einer Erklärung.
+- Der **mcp**-Healthcheck war selbstgebaut und falsch gedacht — daraus wurde am selben Abend
+  ein Ausfall, siehe §12.6.
 
-Die saubere Lösung für den zweiten Punkt ist nicht, die Karenzzeit hochzudrehen, sondern die
-Bereitschaft ehrlich zu machen: sofort lauschen und `/healthz` mit 503 plus Begründung
-beantworten, solange die Spec fehlt. Ein Orchestrator bekommt dann „noch nicht bereit" statt
-einer abgelehnten Verbindung. Offen.
+### 12.6 Der Ausfall: „Restart limit reached"
 
-### 12.6 Was das für Stufe 2 bedeutet
+Nach einem Neustart des Coolify-Servers war der MCP-Dienst tot, Coolify meldete **„Restart
+limit reached"**, und die Anwendung zeigte „no available server". Der api lief zu dem Zeitpunkt.
+
+**Ursache, vollständig:** Der Server lud die OpenAPI-Spec **bevor** er zu lauschen begann,
+`loadSpecWithRetry` gab nach 30 Versuchen à 5 Sekunden auf, und der Prozess beendete sich mit
+`exit(1)`. Coolify startete ihn neu — in exakt dasselbe Rennen. Und dieses Rennen war nicht zu
+gewinnen: `mcp` wartet per `service_started` auf den api, was erfüllt ist, sobald dessen
+*Container* startet; der api selbst braucht danach über 150 Sekunden für Liquibase, Hibernate
+und Quartz. Auf einer kalt gestarteten Maschine laufen beide Uhren gleichzeitig los, das Budget
+war also strukturell zu knapp. Jeder Deploy gegen einen *bereits laufenden* api funktionierte —
+genau deshalb hat es jeden Test überlebt, bis die Maschine neu startete.
+
+**Die Lehre ist nicht „das Budget vergrößern".** Ein langsamer Nachbar darf nicht tödlich sein.
+Der Server lauscht jetzt sofort und lernt danach: die Spec wird im Hintergrund geholt, mit einem
+Backoff, der bei einer Minute aufhört zu wachsen, und **nie aufgegeben**. Solange sie fehlt, ist
+`tools/list` leer und ein Tool-Aufruf antwortet `temporarily_unavailable` mit `retryable: true`,
+statt etwas vorzutäuschen.
+
+Dazu getrennt, was vorher vermengt war:
+
+| Endpunkt | Antwortet | Wer fragt |
+|---|---|---|
+| `GET /livez` | 200, sobald der Prozess lauscht | der Container-Healthcheck |
+| `GET /healthz` | 200 bei geladener Spec, sonst 503 mit Grund, Versuchszahl und Wartedauer | Mensch, Monitoring |
+
+Der Healthcheck im Image prüft jetzt `/livez`. Das Einzige, was ein Neustart überhaupt beheben
+könnte, ist ein nicht laufender Prozess — auf einen Nachbarn zu warten gehört nicht dazu.
+
+Verifiziert, nicht nur behauptet: der gebaute Server wurde gegen ein totes CMMS gestartet, blieb
+am Leben, meldete `503 {"status":"starting","waitingFor":…}`, und wurde 15 Sekunden nachdem das
+CMMS auftauchte von selbst bereit. Ein Test hält denselben Ablauf fest.
+
+**Was das über die Nachbarschaft sagt:** dass `mcp` überhaupt auf `service_started` statt
+`service_healthy` wartet, liegt daran, dass der api-Healthcheck nie grün wird (`CLAUDE.md`,
+„Open items"). Der Einzeiler dort würde diese Abhängigkeit ehrlich machen — dann wartet Compose
+selbst, statt dass jeder Dienst es einzeln nachbaut.
+
+### 12.7 Was das für Stufe 2 bedeutet
 
 Resources und Prompts sind schon da, aber nur in der Form, die ohne CMMS-Zugriff auskommt:
 `cmms://capabilities`, `cmms://enums`, `cmms://enums/{name}`, `cmms://schema/{name}` — alle aus

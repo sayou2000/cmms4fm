@@ -3,6 +3,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from 'node:ht
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 
 import { createMcpServer, type ServerContext } from '../server.js';
+import { describeState, isReady } from '../state.js';
 
 /**
  * Streamable HTTP, stateless (konzept E7 and §4.1).
@@ -51,8 +52,7 @@ export function startHttpTransport(context: ServerContext): Promise<HttpServerHa
         host: config.host,
         port,
         endpoint: '/mcp',
-        profile: context.catalog.profile.name,
-        tools: context.catalog.visible.length,
+        ready: isReady(context.state),
       });
       resolve({
         port,
@@ -76,16 +76,26 @@ async function handle(
   // either way instead of turning a one-character config detail into a 404.
   const path = (url.pathname.replace(/\/+$/, '') || '/').replace(/^\/mcp(?=$|\/)/, '') || '/';
 
-  // Readiness is "the OpenAPI document is loaded" (konzept §6) — and by the time this
-  // server is listening at all, it is. Reaching this handler is therefore the answer.
-  // Probe this, never the MCP endpoint: a probe that POSTs JSON-RPC would open sessions.
+  // Liveness and readiness answer different questions, and conflating them is what turned a
+  // slow neighbour into a crash loop:
+  //
+  //   /livez  — is this process up? Always 200 once it is listening. This is what the
+  //             container healthcheck probes, so a container waiting on the api is never
+  //             restarted for waiting.
+  //   /healthz — can it actually serve tools? 200 only once the OpenAPI document is loaded,
+  //             503 with the reason before that. This is what a human or a monitor should
+  //             look at.
+  //
+  // Probe either of these, never the MCP endpoint: a probe that POSTs JSON-RPC opens sessions.
+  if (request.method === 'GET' && path === '/livez') {
+    respondJson(response, 200, { status: 'alive', ready: isReady(context.state) });
+    return;
+  }
+
   if (request.method === 'GET' && (path === '/healthz' || path === '/readyz')) {
-    respondJson(response, 200, {
-      status: 'ok',
-      profile: context.catalog.profile.name,
-      tools: context.catalog.visible.length,
-      hiddenTools: context.catalog.hidden.length,
-      api: context.catalog.document,
+    const ready = isReady(context.state);
+    respondJson(response, ready ? 200 : 503, {
+      ...describeState(context.state),
       authMode: context.config.authMode,
       readOnly: context.config.readOnly,
     });

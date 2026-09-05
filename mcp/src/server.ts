@@ -18,6 +18,7 @@ import type { OpenApiDocument } from './openapi/types.js';
 import { findPrompt, PROMPTS } from './prompts.js';
 import type { RateLimiter } from './ratelimit.js';
 import { readResource, resourceTemplates, staticResources } from './resources.js';
+import { describeState, type ServerState } from './state.js';
 import { matchesGlob } from './tools/naming.js';
 import type { Catalog, ToolDefinition } from './tools/registry.js';
 
@@ -33,8 +34,8 @@ import type { Catalog, ToolDefinition } from './tools/registry.js';
 export interface ServerContext {
   config: Config;
   logger: Logger;
-  catalog: Catalog;
-  document: OpenApiDocument;
+  /** Mutable: the catalogue arrives after boot and can be replaced by a refresh. */
+  state: ServerState;
   rateLimiter: RateLimiter;
 }
 
@@ -44,9 +45,9 @@ const SERVER_INFO = { name: 'cmms4fm-mcp', version: '0.1.0' };
 
 export function createMcpServer(context: ServerContext): Server {
   const { config, logger } = context;
-  // Handlers read `context.catalog` rather than a captured copy: SPEC_REFRESH_MINUTES can
-  // replace the catalogue under a long-lived stdio server, and a captured reference would
-  // keep serving the tool set from boot.
+  // Handlers read `context.state` rather than a captured copy, for two reasons: the
+  // catalogue may not exist yet when a client connects, and SPEC_REFRESH_MINUTES can replace
+  // it later under a long-lived stdio server.
 
   const server = new Server(SERVER_INFO, {
     capabilities: {
@@ -57,28 +58,46 @@ export function createMcpServer(context: ServerContext): Server {
     instructions: instructions(context),
   });
 
-  server.setRequestHandler(ListToolsRequestSchema, async () => ({
-    tools: [metaToolDefinition(context.catalog), ...context.catalog.visible.map(toMcpTool)],
-  }));
+  server.setRequestHandler(ListToolsRequestSchema, async () => {
+    const catalog = context.state.catalog;
+    // Still loading: an empty list is the honest answer. Lying with a tool that cannot run
+    // would turn one clear failure into a confusing one, and on stdio the client is told the
+    // moment the catalogue lands (notifications/tools/list_changed).
+    if (!catalog) return { tools: [] };
+    return { tools: [metaToolDefinition(catalog), ...catalog.visible.map(toMcpTool)] };
+  });
 
   server.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
     const name = request.params.name;
     const args = (request.params.arguments ?? {}) as Record<string, unknown>;
     const headers = extra.requestInfo?.headers as IncomingHeaders;
 
-    if (name === META_TOOL) {
-      return textResult(JSON.stringify(describeCapabilities(context.catalog, args), null, 2));
+    const catalog = context.state.catalog;
+    if (!catalog) {
+      logger.audit({ event: 'tool_not_ready', tool: name, sessionId: extra.sessionId });
+      return errorResult(
+        failure(
+          'temporarily_unavailable',
+          `the server has not loaded the CMMS API document yet (${
+            describeState(context.state).waitingSeconds as number
+          } s so far), so no tool exists to call. It keeps trying; retry shortly.`,
+        ),
+      );
     }
 
-    const tool = context.catalog.byName.get(name);
+    if (name === META_TOOL) {
+      return textResult(JSON.stringify(describeCapabilities(catalog, args), null, 2));
+    }
+
+    const tool = catalog.byName.get(name);
     if (!tool) {
-      const hidden = context.catalog.hidden.find((candidate) => candidate.name === name);
+      const hidden = catalog.hidden.find((candidate) => candidate.name === name);
       logger.audit({ event: 'tool_unknown', tool: name, sessionId: extra.sessionId });
       return errorResult(
         hidden
           ? failure(
               'forbidden',
-              `the tool "${name}" exists but is not enabled in this deployment (profile "${context.catalog.profile.name}"). Call ${META_TOOL} to see what is available.`,
+              `the tool "${name}" exists but is not enabled in this deployment (profile "${catalog.profile.name}"). Call ${META_TOOL} to see what is available.`,
             )
           : failure('invalid_input', `unknown tool "${name}"`),
       );
@@ -153,8 +172,12 @@ export function createMcpServer(context: ServerContext): Server {
     }));
     server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
       const uri = request.params.uri;
+      const { catalog, document } = context.state;
+      if (!catalog || !document) {
+        throw new Error('the server has not loaded the CMMS API document yet; retry shortly');
+      }
       try {
-        return { contents: [readResource(uri, context.catalog, context.document)] };
+        return { contents: [readResource(uri, catalog, document)] };
       } catch (error) {
         // Resources have no isError channel, so an unreadable URI has to throw.
         throw error instanceof Error ? error : new Error(String(error));
@@ -299,7 +322,15 @@ function describeCapabilities(catalog: Catalog, args: Record<string, unknown>): 
 }
 
 function instructions(context: ServerContext): string {
-  const { catalog, config } = context;
+  const { config } = context;
+  const catalog = context.state.catalog;
+  if (!catalog) {
+    return [
+      'This server proxies tools onto a CMMS REST API, and it has not finished loading that',
+      "API's description yet — so it currently offers no tools. It keeps retrying; ask for the",
+      'tool list again in a few seconds.',
+    ].join(' ');
+  }
   return [
     `Tools over the ${catalog.document.title} of this organisation, proxied to its REST API.`,
     `Profile "${catalog.profile.name}": ${catalog.profile.description}`,

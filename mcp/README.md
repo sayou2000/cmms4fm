@@ -251,6 +251,29 @@ An `upstream` block is resolved once at startup and nginx refuses to start with 
 found in upstream" — a stopped `mcp` service would black out the whole domain. A variable in
 `proxy_pass` defers the lookup, so `/mcp` answers 502 and everything else keeps serving.
 
+## Liveness and readiness are different questions
+
+| Endpoint | Answers | Used by |
+|---|---|---|
+| `GET /livez` | `200` as soon as the process is listening | the container healthcheck |
+| `GET /healthz` (`/readyz`) | `200` once the OpenAPI document is loaded; `503` with the reason, the attempt count and how long it has waited before that | a human, a monitor |
+
+Conflating the two once took the service down. The server used to load the document *before*
+listening, gave up after 150 seconds and exited; Coolify restarted it into the same race and
+the stack ended at `Restart limit reached`. The race could not be won: `mcp` waits on the api
+with `service_started`, which is satisfied the moment the api *container* starts, while the api
+itself needs upwards of 150 seconds for Liquibase, Hibernate and Quartz. Both clocks start
+together on a cold machine. Every deploy against an already-running api worked, which is
+exactly why it survived every test until the server was restarted.
+
+It now listens first and learns second: the document is fetched in the background, retried
+with a backoff that stops growing at a minute, and never given up on. While it waits,
+`tools/list` is empty and a tool call answers `temporarily_unavailable` with `retryable: true`
+rather than pretending. A slow neighbour is a state to report, not a reason to die.
+
+The container healthcheck therefore probes `/livez`: the only thing a restart could ever fix is
+a process that is not running.
+
 ## Audit
 
 One line per tool call on **stderr** (stdout is the protocol on stdio): time, tool, endpoint,

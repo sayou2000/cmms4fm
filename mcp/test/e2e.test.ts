@@ -9,6 +9,7 @@ import { loadConfig } from '../src/config.js';
 import { createLogger } from '../src/logger.js';
 import { RateLimiter } from '../src/ratelimit.js';
 import type { ServerContext } from '../src/server.js';
+import { newState } from '../src/state.js';
 import { buildCatalog } from '../src/tools/registry.js';
 import { startHttpTransport, type HttpServerHandle } from '../src/transport/http.js';
 import { realDocument } from './helpers.js';
@@ -74,8 +75,12 @@ before(async () => {
   const context: ServerContext = {
     config,
     logger,
-    document,
-    catalog: buildCatalog(document, config, logger),
+    state: {
+      ...newState(),
+      document,
+      catalog: buildCatalog(document, config, logger),
+      readyAt: new Date(),
+    },
     rateLimiter: new RateLimiter({ perMinute: 0, burst: 1 }),
   };
   mcp = await startHttpTransport(context);
@@ -293,8 +298,12 @@ test('the rate limit refuses a runaway caller', async () => {
   const limited = await startHttpTransport({
     config,
     logger,
-    document,
-    catalog: buildCatalog(document, config, logger),
+    state: {
+      ...newState(),
+      document,
+      catalog: buildCatalog(document, config, logger),
+      readyAt: new Date(),
+    },
     rateLimiter: new RateLimiter({ perMinute: 60, burst: 2 }),
   });
   try {
@@ -335,5 +344,64 @@ test('a client authenticating with Bearer reaches the CMMS as x-api-key', async 
     assert.equal(call?.apiKey, 'bearer-key');
   } finally {
     await client.close();
+  }
+});
+
+test('a CMMS that is not there yet does not kill the server', async () => {
+  // The failure this replaces: the loader gave up after 150s and the process exited, Coolify
+  // restarted it into the same losing race against the api's own 150s boot, and the stack
+  // ended at "Restart limit reached". A slow neighbour must be a state, not a death.
+  const { newState } = await import('../src/state.js');
+  const config = loadConfig({
+    CMMS_BASE_URL: 'http://127.0.0.1:1',   // nothing listens here, ever
+    PORT: '0',
+    HOST: '127.0.0.1',
+  } as NodeJS.ProcessEnv);
+  const logger = createLogger(config, { write: () => undefined });
+  const starting = await startHttpTransport({
+    config,
+    logger,
+    state: newState(),
+    rateLimiter: new RateLimiter({ perMinute: 0, burst: 1 }),
+  });
+
+  try {
+    // Alive: this is what the container healthcheck probes, so it is never restarted for
+    // waiting on something it cannot influence.
+    const live = await fetch(`http://127.0.0.1:${starting.port}/livez`);
+    assert.equal(live.status, 200);
+    assert.deepEqual(await live.json(), { status: 'alive', ready: false });
+
+    // Not ready: 503, and it says what it is waiting for rather than just failing.
+    const health = await fetch(`http://127.0.0.1:${starting.port}/healthz`);
+    assert.equal(health.status, 503);
+    const payload = (await health.json()) as { status: string; waitingFor: string };
+    assert.equal(payload.status, 'starting');
+    assert.match(payload.waitingFor, /OpenAPI document/);
+
+    // MCP still speaks, and answers honestly.
+    const client = new Client({ name: 'e2e-starting', version: '0' });
+    await client.connect(
+      new StreamableHTTPClientTransport(new URL(`http://127.0.0.1:${starting.port}/mcp`), {
+        requestInit: { headers: { 'x-api-key': 'k' } },
+      }),
+    );
+    try {
+      const { tools } = await client.listTools();
+      assert.deepEqual(tools, [], 'no catalogue yet means no tools, not invented ones');
+
+      const result = await client.callTool({ name: 'get_asset', arguments: { id: 1 } });
+      assert.equal(result.isError, true);
+      const reason = JSON.parse((result.content as { text: string }[])[0]!.text) as {
+        kind: string;
+        retryable: boolean;
+      };
+      assert.equal(reason.kind, 'temporarily_unavailable');
+      assert.equal(reason.retryable, true, 'the agent should come back, not give up');
+    } finally {
+      await client.close();
+    }
+  } finally {
+    await starting.close();
   }
 });

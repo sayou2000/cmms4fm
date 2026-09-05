@@ -371,15 +371,18 @@ upstream FREE behaviour again. When syncing upstream, re-check `LicenseService`,
   document itself instead. And it is now a suspect in the slow deploys above — if Coolify
   waits for containers to report healthy, a check that is red by construction is the first
   place to look.
-- **The `mcp` healthcheck is red by construction during a cold start.** Its `start-period` is
-  60s ([`mcp/Dockerfile`](mcp/Dockerfile)), but the server deliberately does not listen until it
-  has fetched the OpenAPI document, and that comes from the api, which needs up to 150s. So on a
-  full-stack restart the container is legitimately unhealthy for minutes and a caller sees
-  Traefik's `no available server` rather than a reason. Raising the grace period would hide it;
-  the fix is to make readiness honest — listen immediately and answer `/healthz` with 503 plus
-  the cause while the document is still loading. Then an orchestrator gets "not ready yet"
-  instead of a refused connection. Design note in
-  [`docs/mcp-server-konzept.md`](docs/mcp-server-konzept.md) §12.5.
+- **A service must not treat a slow neighbour as fatal — the `mcp` container proved it.** It
+  loaded the OpenAPI document *before* listening, gave up after 150s and exited; Coolify
+  restarted it into the same race and the stack reached `Restart limit reached`. The race was
+  unwinnable: `mcp` waits on the api with `service_started`, satisfied when the api *container*
+  starts, while the api needs upwards of 150s to be usable — both clocks start together on a
+  cold machine. Every deploy against an already-running api worked, so it survived every test
+  until the server was restarted. Fixed: it listens first, fetches in the background, retries
+  forever with a capped backoff, and separates `/livez` (process up, what the container
+  healthcheck probes) from `/healthz` (tools actually servable, 503 with the reason otherwise).
+  The general form is worth keeping: **on this stack the api is the slow one, so anything that
+  depends on it needs a waiting state rather than a deadline.**
+  [`docs/mcp-server-konzept.md`](docs/mcp-server-konzept.md) §12.6.
 - **One API key serves every MCP client.** The rule the design sets is one minimally permitted
   CMMS *user* per lasting client, because the profile only governs what a model can see while
   the key's user governs what it may do. Read-only use makes this cheap to defer; **switching
