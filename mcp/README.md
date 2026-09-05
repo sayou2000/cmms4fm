@@ -166,6 +166,16 @@ entity DTOs reference each other, and `PreventiveMaintenancePostDTO` inlines to 
 Cycles become untyped objects; anything past `MAX_SCHEMA_CHARS` is pruned to its top level,
 with the full definition still readable through `cmms://schema/{name}`.
 
+**Defaults the document dropped are put back** ([`src/openapi/overlays.ts`](src/openapi/overlays.ts)).
+`SearchCriteria` — the body of every search tool — has real defaults in Java (`pageSize = 10`,
+`pageNum = 0`, `sortField = "id"`, `filterFields = []`) and springdoc emits none of them, nor
+the fact that every field is optional. A client that dutifully fills each field it sees
+therefore invents values: n8n's manual input mode produces `"field": "string"` and
+`pageSize: 0`, and the CMMS answers `500 "Page size must not be less than one"` — for a call
+that would have succeeded with those fields left out. The overlay table transcribes the
+defaults and bounds off the Java class; it changes nothing about the request, only what the
+tool advertises. Keep it small and keep every entry traceable to a line of Java.
+
 **Failures are translated, not forwarded** ([`src/cmms/errors.ts`](src/cmms/errors.ts)). Each
 result carries a `kind`, a `retryable` verdict and an `advice` line, because an agent that
 sees only "something went wrong" retries a 403 forever and gives up on a 503. A 500 with a

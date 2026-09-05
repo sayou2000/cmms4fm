@@ -1,3 +1,4 @@
+import { applyOverlay } from './overlays.js';
 import type { JsonSchema } from './types.js';
 
 /**
@@ -69,6 +70,8 @@ function inline(node: unknown, options: BuildOptions, stack: string[], depth: nu
       // Keep the DTO name: it is often the only hint about what an object represents,
       // because the document carries a description for only 6 of its 373 operations.
       if (withTitle.title === undefined) withTitle.title = name;
+      // Defaults and bounds the document dropped but the API still enforces.
+      return applyOverlay(name, withTitle);
     }
     return resolved;
   }

@@ -26,9 +26,10 @@ export const CURATED_TOOLS: Record<string, CuratedTool> = {
     name: 'search_assets',
     description: [
       'Find assets (equipment, plant, technical installations) in this organisation.',
+      'Every field of the body is optional: `{}` lists the first page with the server defaults. Send only what you want to change — inventing a value for a field you do not need is the usual way this call fails.',
       'Filters go in `body.filterFields`, one entry per condition, and every entry is combined with AND — there is no top-level OR, only `alternatives` inside a single condition.',
-      'A condition is `{field, operation, value}`; common operations are `eq`, `ne`, `cn` (contains), `gt`, `lt`, `in`.',
-      'Page with `body.pageNum` (0-based) and `body.pageSize`; sort with `body.sortField` and `body.direction`.',
+      'A condition is `{field, operation, value}`; common operations are `eq`, `ne`, `cn` (contains), `gt`, `lt`, `in`. Omit `filterFields` entirely rather than sending a placeholder condition.',
+      'Page with `body.pageNum` (0-based) and `body.pageSize` (at least 1); sort with `body.sortField` and `body.direction`.',
       'Enum-valued fields need `enumName` set, and only PRIORITY, STATUS and JS_DATE are supported there — other enum fields are stored as numbers, so a string comparison against them silently matches nothing.',
       'The organisation filter is added by the CMMS; do not send a company condition.',
     ].join(' '),
@@ -61,6 +62,7 @@ export const CURATED_TOOLS: Record<string, CuratedTool> = {
     name: 'search_work_orders',
     description: [
       'Find work orders (maintenance jobs). Same filter shape as search_assets: `body.filterFields` conditions combined with AND, `pageNum`/`pageSize` for paging, `sortField`/`direction` for order.',
+      'Every field is optional — `{}` lists the first page. Do not fill fields you do not need.',
       'Filtering on priority or status needs `enumName` set to PRIORITY or STATUS respectively, because those columns hold enum ordinals rather than text.',
     ].join(' '),
   },
@@ -91,7 +93,7 @@ export const CURATED_TOOLS: Record<string, CuratedTool> = {
   'POST /locations/search': {
     name: 'search_locations',
     description:
-      'Find locations (sites, buildings, floors, rooms). Locations nest; the same filter shape as search_assets applies.',
+      'Find locations (sites, buildings, floors, rooms). Locations nest; the same filter shape as search_assets applies. Every field of the body is optional; `{}` lists the first page.',
   },
   'GET /locations/{id}': {
     name: 'get_location',
@@ -105,7 +107,7 @@ export const CURATED_TOOLS: Record<string, CuratedTool> = {
   'POST /meters/search': {
     name: 'search_meters',
     description:
-      'Find meters (counters attached to assets: operating hours, kWh, cubic metres). Same filter shape as search_assets.',
+      'Find meters (counters attached to assets: operating hours, kWh, cubic metres). Same filter shape as search_assets. Every field of the body is optional; `{}` lists the first page.',
   },
   'GET /meters/{id}': {
     name: 'get_meter',
@@ -128,7 +130,7 @@ export const CURATED_TOOLS: Record<string, CuratedTool> = {
   'POST /parts/search': {
     name: 'search_parts',
     description:
-      'Find spare parts and stock items. Same filter shape as search_assets; quantity and cost fields are numeric.',
+      'Find spare parts and stock items. Same filter shape as search_assets; quantity and cost fields are numeric. Every field of the body is optional; `{}` lists the first page.',
   },
   'GET /parts/{id}': {
     name: 'get_part',
@@ -137,7 +139,7 @@ export const CURATED_TOOLS: Record<string, CuratedTool> = {
   'POST /requests/search': {
     name: 'search_requests',
     description:
-      'Find maintenance requests — reports that have not yet become work orders. Same filter shape as search_assets.',
+      'Find maintenance requests — reports that have not yet become work orders. Same filter shape as search_assets. Every field of the body is optional; `{}` lists the first page.',
   },
   'GET /requests/{id}': {
     name: 'get_request',
@@ -147,7 +149,7 @@ export const CURATED_TOOLS: Record<string, CuratedTool> = {
   'POST /preventive-maintenances/search': {
     name: 'search_preventive_maintenances',
     description:
-      'Find preventive maintenance schedules — the recurring plans from which work orders are generated. Same filter shape as search_assets.',
+      'Find preventive maintenance schedules — the recurring plans from which work orders are generated. Same filter shape as search_assets. Every field of the body is optional; `{}` lists the first page.',
   },
   'GET /preventive-maintenances/{id}': {
     name: 'get_preventive_maintenance',

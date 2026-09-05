@@ -517,6 +517,26 @@ liest nur den Katalog, den der Server schon hat. Jedes andere Tool antwortet
 obwohl gar nichts authentifiziert war. Wer das nächste Mal „einige Tools gehen nicht" hört:
 zuerst prüfen, ob überhaupt ein Schlüssel ankommt.
 
+**Und ein zweiter Befund, der ohne echten Klienten nicht sichtbar war: die Spec verschweigt
+ihre eigenen Defaults.** `SearchCriteria` — der Body jedes Such-Tools — hat in Java echte
+Vorgaben (`pageSize = 10`, `pageNum = 0`, `sortField = "id"`, `filterFields = []`), und
+springdoc schreibt keine davon ins Schema, auch nicht, dass alle Felder optional sind. Ein
+Klient, der brav jedes Feld befüllt, das er sieht, erfindet deshalb Werte: n8n erzeugte
+`"field": "string"` und `pageSize: 0`, und das CMMS antwortete
+`500 "Page size must not be less than one"` — für einen Aufruf, der mit *weggelassenen*
+Feldern funktioniert hätte. Ein Sprachmodell, das denselben Aufruf zusammensetzt, hat genau
+dasselbe Problem.
+
+Die Defaults stehen jetzt im angebotenen Schema (`mcp/src/openapi/overlays.ts`), abgeschrieben
+von der Java-Klasse. Das ist Transkription, keine Fachlogik: am Aufruf ändert sich nichts, nur
+daran, was das Werkzeug über sich behauptet. Die Tabelle bleibt bewusst winzig, und jeder
+Eintrag muss auf eine Zeile Java zeigen — sonst wandert genau die Logik in den Proxy, die
+Nicht-Ziel §1 draußen halten soll.
+
+**Was daraus als Regel bleibt:** ein Klient, der ein Feld falsch füllt, ist kein Bedienfehler,
+solange das Schema ihm nicht sagt, dass er es weglassen darf. Die Werkzeugbeschreibung ist Teil
+des Vertrags, nicht Dekoration.
+
 ### 12.5 Was das für Stufe 2 bedeutet
 
 Resources und Prompts sind schon da, aber nur in der Form, die ohne CMMS-Zugriff auskommt:

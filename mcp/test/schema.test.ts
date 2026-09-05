@@ -86,3 +86,39 @@ test('every real request body stays within the advertised ceiling', () => {
     }
   }
 });
+
+test('SearchCriteria advertises the defaults the API actually has', async () => {
+  // springdoc drops them, so a client that fills every field it sees invents values: n8n's
+  // manual mode produced `pageSize: 0` and the CMMS answered
+  // 500 "Page size must not be less than one" — for a call that would have worked with the
+  // field left out. The values here are read off SearchCriteria.java.
+  const { buildCatalog } = await import('../src/tools/registry.js');
+  const { testConfig, recordingLogger, realDocument } = await import('./helpers.js');
+  const document = realDocument();
+  const catalog = buildCatalog(document, testConfig(), recordingLogger().logger);
+
+  const search = catalog.byName.get('search_work_orders');
+  assert.ok(search);
+  const body = (search.inputSchema.properties as Record<string, JsonSchema>).body!;
+  const properties = body.properties as Record<string, JsonSchema>;
+
+  assert.equal(properties.pageSize!.default, 10);
+  assert.equal(properties.pageSize!.minimum, 1, 'PageRequest.of rejects 0');
+  assert.equal(properties.pageNum!.default, 0);
+  assert.equal(properties.sortField!.default, 'id');
+  assert.equal(properties.direction!.default, 'ASC');
+
+  // Still optional: nothing in the body is required, so `{}` is a valid call.
+  assert.equal(body.required, undefined);
+  // And the type and text from the document survive the overlay.
+  assert.equal(properties.pageSize!.type, 'integer');
+  assert.match(String(properties.pageSize!.description), /results per page/);
+});
+
+test('an overlay never invents a property the document does not have', async () => {
+  const { applyOverlay } = await import('../src/openapi/overlays.js');
+  const result = applyOverlay('SearchCriteria', { type: 'object', properties: { pageNum: { type: 'integer' } } });
+  const properties = result.properties as Record<string, JsonSchema>;
+  assert.equal(properties.pageNum!.default, 0);
+  assert.equal(properties.pageSize, undefined, 'a property removed upstream must stay removed');
+});
