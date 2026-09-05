@@ -163,7 +163,7 @@ Der Server hält **keine eigene Identität**. Zwei Betriebsarten, pro Deployment
 
 | Modus | Wie | Wann |
 |---|---|---|
-| **Durchreichung** (empfohlen) | Der Klient legt seinen `x-api-key` je MCP-Sitzung vor (HTTP-Header bzw. stdio-Env); der Server reicht ihn unverändert an das CMMS weiter | Mehrere Klienten/Benutzer, weil Identität, Rechte, Company **und Audit** am echten Benutzer hängen |
+| **Durchreichung** (empfohlen) | Der Klient legt seinen Schlüssel je MCP-Sitzung vor — über HTTP als `x-api-key`-Header **oder** als `Authorization: Bearer <key>`, je nachdem, was er kann; auf stdio als Env-Variable. Der Server reicht ihn unverändert als `x-api-key` an das CMMS weiter | Mehrere Klienten/Benutzer, weil Identität, Rechte, Company **und Audit** am echten Benutzer hängen |
 | **Dienstschlüssel** | Der Server trägt genau einen Schlüssel aus seiner Env | Ein einzelner, vertrauenswürdiger Agent; einfachste Einrichtung |
 
 Beide Male gilt: **das CMMS ist die einzige Instanz, die über Berechtigung und Mandant
@@ -498,7 +498,26 @@ zuerst gegen diese URL zu prüfen, bevor man Rechte im CMMS sucht.
 Erst wenn 1 und 2 grün sind, ist Stufe 0 im Sinne des Konzepts bewiesen. Alles davor ist Code,
 der gegen ein Double funktioniert.
 
-### 12.4 Was das für Stufe 2 bedeutet
+### 12.4 Erster echter Klient: was dabei brach
+
+n8n (MCP-Client-Node, HTTP Streamable) hat die Kette am 2026-09-05 als erster echter Klient
+angefasst — und dabei zwei Dinge gezeigt.
+
+**Nur `x-api-key` zu lesen war zu eng.** Der Node bietet „Bearer Auth" als fertige Option;
+damit kommt `Authorization: Bearer <key>` an, und der Server fand keinen Schlüssel. Beide Header
+werden jetzt akzeptiert und bedeuten dasselbe: der Token geht ohnehin als `x-api-key` ans CMMS
+weiter, gewährt also nichts zusätzlich. Ein Klient, der den einen Header nicht senden kann, ist
+kein Angreifer, sondern ein Klient.
+
+**Die Fehlergestalt ist irreführend, und das ist der eigentliche Befund.** Ohne Schlüssel
+gelingt die Verbindung, `tools/list` liefert die vollständige Werkzeugliste, und
+`list_capabilities` antwortet normal — weil genau dieses eine Tool keinen Schlüssel braucht, es
+liest nur den Katalog, den der Server schon hat. Jedes andere Tool antwortet
+`unauthenticated`. Das liest sich als „der Server läuft, aber die meisten Tools sind kaputt",
+obwohl gar nichts authentifiziert war. Wer das nächste Mal „einige Tools gehen nicht" hört:
+zuerst prüfen, ob überhaupt ein Schlüssel ankommt.
+
+### 12.5 Was das für Stufe 2 bedeutet
 
 Resources und Prompts sind schon da, aber nur in der Form, die ohne CMMS-Zugriff auskommt:
 `cmms://capabilities`, `cmms://enums`, `cmms://enums/{name}`, `cmms://schema/{name}` — alle aus

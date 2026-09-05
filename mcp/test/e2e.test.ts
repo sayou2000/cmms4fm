@@ -321,3 +321,19 @@ test('the rate limit refuses a runaway caller', async () => {
     await limited.close();
   }
 });
+
+test('a client authenticating with Bearer reaches the CMMS as x-api-key', async () => {
+  // The n8n MCP Client node offers "Bearer Auth" as its ready-made option, so this is the
+  // shape a real client sends. Before this was accepted, the connection and tools/list
+  // worked while every actual tool call answered "no API key" — which reads like a broken
+  // server rather than a header mismatch.
+  const client = await connect({ authorization: 'Bearer bearer-key' });
+  try {
+    const result = await client.callTool({ name: 'get_asset', arguments: { id: 1 } });
+    assert.equal(result.isError, undefined);
+    const call = calls.at(-1);
+    assert.equal(call?.apiKey, 'bearer-key');
+  } finally {
+    await client.close();
+  }
+});

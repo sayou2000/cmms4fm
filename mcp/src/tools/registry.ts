@@ -141,6 +141,12 @@ interface SchemaOptions {
  * The body is nested rather than merged so a body field can never collide with, or be
  * mistaken for, a query parameter — the two go to different places in the HTTP request and
  * flattening them would make a mis-sent field look like a server bug.
+ *
+ * Header parameters are deliberately not offered. The whole document declares exactly one —
+ * the optional `X-Platform` on `PATCH /work-orders/{id}/change-status`, which only steers
+ * notification wording — so there is nothing to gain and a needless argument to explain. If
+ * a *required* header parameter ever appears upstream, this is the place that has to grow;
+ * until then a tool would only be advertising a field with no effect.
  */
 function buildInputSchema(operation: Operation, options: SchemaOptions): JsonSchema {
   const properties: Record<string, JsonSchema> = {};

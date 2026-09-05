@@ -62,8 +62,30 @@ For a client entry (Claude Desktop, MCP Inspector), point `command` at `node` an
 `dist/src/index.js`, and put the variables above in that client's `env` block.
 
 In the deployed stack the server runs as the `mcp` service behind nginx at `/mcp`, so a remote
-client connects to `https://<domain>/mcp` over Streamable HTTP and sends its key as an
-`x-api-key` header.
+client connects to `https://<domain>/mcp` over Streamable HTTP and sends its key with the
+request.
+
+### How a client sends the key
+
+Either header works, and they mean the same thing — whichever the client can actually produce:
+
+```
+x-api-key: <key>
+Authorization: Bearer <key>
+```
+
+The bearer form is not a second credential scheme and not OAuth: the token is forwarded to the
+CMMS as `x-api-key` either way, so it grants nothing extra. It is accepted because clients
+overwhelmingly offer a bearer field and sometimes little else — **n8n's MCP Client node**
+presents "Bearer Auth" as the ready-made option, and its generic "Header Auth" credential is
+where a custom `x-api-key` would live.
+
+**The failure this produces is worth recognising, because it does not look like an auth
+problem.** With no key the connection succeeds, `tools/list` returns the full tool set, and
+`list_capabilities` answers normally — that one tool needs no key, because it only reads the
+catalogue the server already holds. Every *other* tool answers
+`{"kind": "unauthenticated", ...}`. So it reads as "the server works but most tools are
+broken" when in fact nothing was authenticated at all.
 
 ## Configuration
 

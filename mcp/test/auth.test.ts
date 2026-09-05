@@ -10,7 +10,7 @@ test('passthrough takes the key from the request header, whatever its casing', (
   const config = testConfig();
   const lower = resolveCaller(config, { 'x-api-key': 'abc' });
   assert.equal(lower.ok, true);
-  assert.equal(lower.ok && lower.caller.source, 'header');
+  assert.equal(lower.ok && lower.caller.source, 'x-api-key');
   assert.equal(lower.ok && lower.caller.apiKey, 'abc');
 
   const upper = resolveCaller(config, { 'X-Api-Key': ' abc ' });
@@ -89,4 +89,31 @@ test('CMMS_API_KEY is not a fallback over HTTP', () => {
   const resolved = resolveCaller(config, {});
   assert.equal(resolved.ok, false);
   assert.equal(!resolved.ok && resolved.failure.kind, 'unauthenticated');
+});
+
+test('a bearer token is accepted as the API key', () => {
+  // Clients overwhelmingly offer a bearer field and sometimes nothing else (n8n's MCP Client
+  // node), and the token is forwarded as x-api-key either way — so refusing it buys nothing.
+  const config = testConfig();
+  const bearer = resolveCaller(config, { authorization: 'Bearer abc123' });
+  assert.equal(bearer.ok, true);
+  assert.equal(bearer.ok && bearer.caller.apiKey, 'abc123');
+  assert.equal(bearer.ok && bearer.caller.source, 'bearer');
+
+  assert.equal(
+    resolveCaller(config, { Authorization: 'bearer  abc123  ' }).ok && true,
+    true,
+    'the scheme is case-insensitive and the token is trimmed',
+  );
+
+  // x-api-key wins when both are present: it is the unambiguous one.
+  const both = resolveCaller(config, { 'x-api-key': 'direct', authorization: 'Bearer other' });
+  assert.equal(both.ok && both.caller.apiKey, 'direct');
+  assert.equal(both.ok && both.caller.source, 'x-api-key');
+});
+
+test('an Authorization header that is not a bearer token is not mistaken for a key', () => {
+  const basic = resolveCaller(testConfig(), { authorization: 'Basic dXNlcjpwYXNz' });
+  assert.equal(basic.ok, false);
+  assert.equal(!basic.ok && basic.failure.kind, 'unauthenticated');
 });
