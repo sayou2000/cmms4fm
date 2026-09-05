@@ -155,6 +155,15 @@ backend, and it has already caught a bad merge resolution that a local build cal
 **A deploy takes about 50 seconds** since the move to Vite; it used to be around five minutes.
 If one suddenly takes minutes again, that is a signal worth following rather than waiting out.
 
+**That number stopped holding on 2026-09-05, the day the `mcp` image joined the stack.** One
+deploy took **23m37s** and succeeded; a second one, triggered through Coolify's API a minute
+later, sat "In progress" for over forty minutes and blocked the queue behind it until it
+cleared on its own. The whole domain answers `no available server` for the duration, which
+reads like an outage and is a redeploy. A fourth image being pulled for the first time explains
+seconds, not twenty minutes, so the cause is more likely something being *waited on* — see the
+two red healthchecks under Open items. Not diagnosed; recorded so the next slow deploy is not
+mistaken for a first occurrence.
+
 ### Coolify behaviour worth knowing
 
 Each of these cost a failed deployment. They are not documented upstream.
@@ -359,7 +368,22 @@ upstream FREE behaviour again. When syncing upstream, re-check `LicenseService`,
   codebase misleading health and error signals have already cost hours (see "Wrong
   credentials" above). It also already costs something: the `mcp` service cannot wait on
   `service_healthy` for the api and settles for `service_started`, retrying the OpenAPI
-  document itself instead.
+  document itself instead. And it is now a suspect in the slow deploys above — if Coolify
+  waits for containers to report healthy, a check that is red by construction is the first
+  place to look.
+- **The `mcp` healthcheck is red by construction during a cold start.** Its `start-period` is
+  60s ([`mcp/Dockerfile`](mcp/Dockerfile)), but the server deliberately does not listen until it
+  has fetched the OpenAPI document, and that comes from the api, which needs up to 150s. So on a
+  full-stack restart the container is legitimately unhealthy for minutes and a caller sees
+  Traefik's `no available server` rather than a reason. Raising the grace period would hide it;
+  the fix is to make readiness honest — listen immediately and answer `/healthz` with 503 plus
+  the cause while the document is still loading. Then an orchestrator gets "not ready yet"
+  instead of a refused connection. Design note in
+  [`docs/mcp-server-konzept.md`](docs/mcp-server-konzept.md) §12.5.
+- **One API key serves every MCP client.** The rule the design sets is one minimally permitted
+  CMMS *user* per lasting client, because the profile only governs what a model can see while
+  the key's user governs what it may do. Read-only use makes this cheap to defer; **switching
+  any client to a writing profile without fixing it first is the mistake to avoid.**
 - **`POST /work-orders/search` returns the whole company** for a user who has no work-order
   view permission at all. `WorkOrderService.getSearchCriteria` only ever narrows: it adds the
   company filter, then adds the own-records filter *inside* an `if (viewPermissions contains

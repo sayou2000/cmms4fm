@@ -476,6 +476,11 @@ Tool bleibt unaufrufbar, Rate-Limit greift, Audit-Zeile enthält weder Schlüsse
 Von Hand nachgefahren: `npm ci` + `npm test` wie in CI, die Build-Schritte des Dockerfiles
 einzeln, und der Start des fertigen Builds mit Abfrage von `/healthz`.
 
+**Stufe 0 ist bewiesen (2026-09-05).** Ein API-Key wurde erzeugt, n8n hängt als MCP-Klient an
+`https://<domain>/mcp`, und `get_asset` liefert echte Anlagendaten aus dem CMMS zurück. Damit
+ist die Kette Klient → MCP → REST → Antwort vollständig belegt, nicht nur gegen ein Double.
+Der Rest dieses Abschnitts hält fest, was auf dem Weg dahin nicht stimmte.
+
 **Die Voraussetzung aus §2 ist schon erfüllt.** `GET /api/license/state` ist `permitAll` und
 antwortet auf der laufenden Instanz mit `planName: "Self-Hosted (unlocked)"` und `API_ACCESS`
 in den Entitlements — `SELF_HOSTED_UNLOCK_PREMIUM=true` ist also gesetzt, und damit sind beide
@@ -484,19 +489,14 @@ dem FREE-Plan beim Start alle `PlanFeatures` gibt). Der „Schritt null" des Kon
 damit. Nützlich als Diagnose: antwortet ein Tool-Aufruf später 403 „Access denied", ist das
 zuerst gegen diese URL zu prüfen, bevor man Rechte im CMMS sucht.
 
-**Nicht geprüft, weil es Zugriffe braucht, die außerhalb des Repos liegen:**
+**Inzwischen ebenfalls belegt:** der Image-Build (CI baut `cmms4fm-mcp` seit dem ersten Push
+auf `main`), das Deployment über Coolify, und der Betrieb hinter nginx unter `/mcp`.
 
-1. Ein API-Key, erzeugt in der CMMS-Oberfläche unter Settings → Integrations → API Keys, für
-   einen Benutzer mit genau den Rechten, die dieser Klient haben soll. Der Klartext erscheint
-   genau einmal.
-2. Damit einmal die echte Kette: `curl -H "x-api-key: …" https://<domain>/api/assets/mini`,
-   danach ein MCP-Klient (MCP Inspector oder Claude Desktop) gegen `https://<domain>/mcp`.
-3. Der Image-Build selbst — Docker lief auf der Entwicklungsmaschine nicht. Die Schritte des
-   Dockerfiles wurden einzeln nachgefahren, `docker build` nicht. CI baut ihn beim ersten Push
-   auf `main`.
-
-Erst wenn 1 und 2 grün sind, ist Stufe 0 im Sinne des Konzepts bewiesen. Alles davor ist Code,
-der gegen ein Double funktioniert.
+**Was weiterhin offen ist, und warum es zählt:** es existiert genau *ein* API-Key für alle
+Klienten. §5.1 verlangt pro dauerhaftem Klienten einen eigenen, minimal berechtigten Benutzer —
+das ist die scharfe Kontrolle, das Profil regelt nur Sichtbarkeit. Solange nur gelesen wird,
+ist der Schaden begrenzt; **bevor irgendein Klient auf ein schreibendes Profil wechselt, ist
+das nachzuholen.**
 
 ### 12.4 Erster echter Klient: was dabei brach
 
@@ -537,7 +537,33 @@ Nicht-Ziel §1 draußen halten soll.
 solange das Schema ihm nicht sagt, dass er es weglassen darf. Die Werkzeugbeschreibung ist Teil
 des Vertrags, nicht Dekoration.
 
-### 12.5 Was das für Stufe 2 bedeutet
+### 12.5 Was der Betrieb gezeigt hat
+
+Zwei Beobachtungen vom ersten Deployment-Tag, beide unabhängig von der Funktion:
+
+**Ein Deploy dauerte 23m37s statt der dokumentierten ~50 Sekunden**, und ein zweites,
+parallel über die Coolify-API ausgelöstes Deployment blieb 40+ Minuten „In progress" hängen und
+blockierte die Warteschlange, bis es sich löste. Ein viertes Image, das erstmals gezogen wird,
+erklärt Sekunden, keine 23 Minuten. `CLAUDE.md` sagt selbst, dass ein plötzlich langsamer Deploy
+ein Signal ist und kein Wartefall — hier ist es aufgeschrieben, damit die Beobachtung nicht
+verlorengeht.
+
+**Der wahrscheinlichste Grund sind Healthchecks, auf die gewartet wird, und es gibt zwei rote:**
+
+- Der **api**-Healthcheck war noch nie grün (`CLAUDE.md`, „Open items"): `WebSecurityConfig`
+  gibt `/actuator/health/readiness` nicht frei, Spring antwortet dauerhaft 403.
+- Der **mcp**-Healthcheck ist selbstgebaut und hat einen Konstruktionsfehler: `start-period`
+  steht auf 60 Sekunden, aber der Server lauscht bewusst erst, wenn er die OpenAPI-Spec geladen
+  hat — und die kommt vom api, der bis zu 150 Sekunden braucht. Beim Kaltstart des ganzen Stacks
+  ist mcp also planmäßig einige Minuten „unhealthy", und ein Aufrufer sieht in der Zeit Traefiks
+  „no available server" statt einer Erklärung.
+
+Die saubere Lösung für den zweiten Punkt ist nicht, die Karenzzeit hochzudrehen, sondern die
+Bereitschaft ehrlich zu machen: sofort lauschen und `/healthz` mit 503 plus Begründung
+beantworten, solange die Spec fehlt. Ein Orchestrator bekommt dann „noch nicht bereit" statt
+einer abgelehnten Verbindung. Offen.
+
+### 12.6 Was das für Stufe 2 bedeutet
 
 Resources und Prompts sind schon da, aber nur in der Form, die ohne CMMS-Zugriff auskommt:
 `cmms://capabilities`, `cmms://enums`, `cmms://enums/{name}`, `cmms://schema/{name}` — alle aus

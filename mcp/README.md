@@ -87,6 +87,58 @@ catalogue the server already holds. Every *other* tool answers
 `{"kind": "unauthenticated", ...}`. So it reads as "the server works but most tools are
 broken" when in fact nothing was authenticated at all.
 
+## Driving it from n8n
+
+n8n's **MCP Client** node is the first client this server ran against, so its settings are
+worth writing down.
+
+| Field | Value |
+|---|---|
+| Server Transport | HTTP Streamable |
+| MCP Endpoint URL | `https://<domain>/mcp` |
+| Authentication | Bearer Auth — or Header Auth with the name `x-api-key`; both work |
+| Credential | the API key from Settings → Integrations → API Keys |
+
+The node's **Manual** input mode builds an argument skeleton from the tool's JSON Schema. For
+a search tool that skeleton is not a usable call — it fills every optional field with a
+placeholder. Replace it with only what you need:
+
+```json
+{ "pageSize": 25, "sortField": "id", "direction": "DESC" }
+```
+
+```json
+{ "filterFields": [
+    { "field": "status", "operation": "in", "values": ["OPEN"], "enumName": "STATUS" }
+  ],
+  "pageSize": 25 }
+```
+
+`{}` is a valid body — it returns the first page with the server's defaults.
+
+`enumName` is not decoration: status and priority are stored as enum **ordinals**, so without
+it the filter compares text against a number, matches nothing, and reports no error. Only
+`PRIORITY`, `STATUS` and `JS_DATE` are supported there (`WrapperSpecification.getRealValue`).
+
+### When something does not work
+
+Every failure comes back as JSON with a `kind`, so read that first rather than the prose.
+
+| Symptom | What it means |
+|---|---|
+| Connection fine, `tools/list` full, but **only `list_capabilities` works** | No key is arriving. That one tool needs none — it only reads the catalogue the server already holds. Check the credential is actually attached to the node. |
+| `"kind": "unauthenticated"`, no `status` | The key never reached the server. Same cause as above. |
+| `"kind": "unauthenticated"`, `"status": 401` | The key reached the CMMS and was rejected: wrong, revoked, or from another instance. |
+| `"kind": "forbidden"`, `"status": 403`, message mentions `SELF_HOSTED_UNLOCK_PREMIUM` | The API-key path is gated. Check `/api/license/state` for `API_ACCESS`. |
+| `"kind": "forbidden"`, `"status": 403`, ordinary message | The key is valid; its **user** lacks the permission. Fix it in the CMMS, not here. |
+| `"kind": "business_failure"`, `"status": 500` | The CMMS refused on business grounds and the message is the reason — e.g. `Page size must not be less than one` from a `pageSize: 0` placeholder. Retrying changes nothing. |
+| `"kind": "temporarily_unavailable"` | The CMMS is not ready. It needs tens of seconds after a restart. |
+| `"the tool exists but is not enabled in this deployment"` | The profile hides it. `list_capabilities` says what else exists; widening is `MCP_PROFILE` in Coolify. |
+| The whole domain answers `no available server` | Not this service — the stack is mid-deploy. Wait it out. |
+
+Nothing here is guesswork: each row was produced at least once while getting the first client
+working.
+
 ## Configuration
 
 Every setting, with its default, is in [`.env.example`](.env.example). The four that decide
