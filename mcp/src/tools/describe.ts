@@ -17,6 +17,13 @@ import type { Operation } from '../openapi/operations.js';
  * error that costs a hidden tool, not the one that exposes a write.
  */
 
+/**
+ * Appended to every tool whose PATCH replaces the record. Worded as an instruction rather than
+ * a caveat, because the correct sequence is not obvious from the verb.
+ */
+export const PATCH_REPLACES_WARNING =
+  'Despite being a PATCH, this replaces the whole record: every field you leave out is cleared (text becomes empty, numbers become 0). Read the record first, change what you mean to change, and send all of it back.';
+
 /** POST paths that only query. Matched against the template path from the document. */
 const READ_ONLY_POST_PATTERNS: RegExp[] = [
   /^\/analytics\//,
@@ -82,6 +89,30 @@ export function isBlocked(operation: Operation): boolean {
  * and the response DTO — and says so, so a model can tell a described tool from a guessed
  * one and prefer the curated ones.
  */
+/**
+ * `PATCH` in this API replaces the record rather than merging into it.
+ *
+ * The mappers are MapStruct update methods (`X updateX(@MappingTarget X entity, XPatchDTO
+ * dto)`) and none of them sets `nullValuePropertyMappingStrategy = IGNORE` — 1 of 58 does, and
+ * that one is a file this fork added. MapStruct's default is `SET_TO_NULL`, so a field absent
+ * from the body is written as null, and an absent primitive as 0 or false.
+ *
+ * The web frontend never notices, because its edit forms always post the complete object. An
+ * agent doing what the word "patch" means sends only the field it wants to change — and either
+ * destroys the rest of the record or, where a column is `@NotNull` (`Part.name` is), fails with
+ * an error that says nothing about the real cause. That is what happened when an attempt to set
+ * a part's quantity kept failing.
+ *
+ * Detected by the body schema ending in `PatchDTO`, which is exactly the set mapped onto a whole
+ * entity — 46 of the 69 PATCH operations. The other 23 take purpose-built bodies
+ * (`WorkOrderChangeStatusDTO`) or none at all and behave as their name suggests.
+ */
+export function replacesWholeRecord(operation: Operation): boolean {
+  if (operation.method !== 'patch') return false;
+  const ref = operation.body?.schema.$ref;
+  return typeof ref === 'string' && ref.endsWith('PatchDTO');
+}
+
 export function synthesiseDescription(operation: Operation): string {
   const parts: string[] = [];
 
@@ -108,6 +139,8 @@ export function synthesiseDescription(operation: Operation): string {
   if (operation.queryParams.length > 0) {
     parts.push(`Query parameters: ${operation.queryParams.map((p) => p.name).join(', ')}.`);
   }
+
+  if (replacesWholeRecord(operation)) parts.push(PATCH_REPLACES_WARNING);
 
   if (operation.deprecated) parts.push('Deprecated in the API.');
 

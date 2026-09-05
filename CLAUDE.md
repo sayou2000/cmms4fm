@@ -202,6 +202,30 @@ Each of these cost a failed deployment. They are not documented upstream.
 - Alpine images use `ash`. No `$'\r'`, no bashisms in entrypoints.
 - Commit messages: what broke and why, not just what changed.
 
+### `PATCH` replaces the record — it does not merge
+
+Every entity mapper is a MapStruct update method (`X updateX(@MappingTarget X entity, XPatchDTO
+dto)`), and **1 of 58 sets `nullValuePropertyMappingStrategy = IGNORE`** — `SavedViewMapper`,
+which this fork added. MapStruct's default is `SET_TO_NULL`, so a field absent from the request
+body is written as `null`, and an absent primitive as `0` or `false`. 46 of the 69 `PATCH`
+operations take an `XPatchDTO` and behave this way; the other 23 have purpose-built bodies
+(`WorkOrderChangeStatusDTO`) or none and do what their name says.
+
+The web frontend never trips over it because its edit forms always post the complete object.
+Anything else — an API client, an agent, a script — sends what the verb implies and destroys
+the rest of the record. Where a column is `@NotNull` (`Part.name` is) the write fails instead,
+with an error that names the constraint and not the cause, which is how this was found: an
+agent trying to set a part's quantity kept failing and could not say why.
+
+So: **read the record, change the field, send everything back.** Where a purpose-built endpoint
+exists, prefer it — `POST /parts/{id}/restock` adds to stock and records the movement, while
+`PATCH /parts/{id}` sets the level and, if used partially, empties the part.
+
+Making the mappers `IGNORE` by default would fix it at the root and is a one-line
+`@MapperConfig`. It is also 57 upstream files' behaviour changing at once, which needs a test
+pass this instance does not have — so it is written down rather than done. If it is ever
+attempted, the `PATCH` semantics of every endpoint change with it.
+
 ### Adding a list filter
 
 List pages post a `SearchCriteria` to `/<entity>/search`; `SpecificationBuilder` joins every

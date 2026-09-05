@@ -154,7 +154,8 @@ export const CURATED_TOOLS: Record<string, CuratedTool> = {
     name: 'update_part',
     description: [
       "Change a part's master data (name, description, cost, minimum quantity, assigned assets).",
-      '`quantity` here **sets** the absolute stock level rather than adding to it, and leaves no stock-movement record — to book stock in, use restock_part instead.',
+      '`quantity` here **sets** the absolute stock level rather than adding to it, and leaves no stock-movement record — for a stock movement use restock_part instead, which also spares you the whole-record rule below.',
+      'To raise a stock level to a target figure, restock_part with the difference is the safer route.',
     ].join(' '),
   },
   'PATCH /part-quantities/{id}': {

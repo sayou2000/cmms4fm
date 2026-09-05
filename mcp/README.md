@@ -135,6 +135,7 @@ Every failure comes back as JSON with a `kind`, so read that first rather than t
 | `"kind": "temporarily_unavailable"` | The CMMS is not ready. It needs tens of seconds after a restart. |
 | `"the tool exists but is not enabled in this deployment"` | The profile hides it. `list_capabilities` says what else exists; widening is `MCP_PROFILE` in Coolify. |
 | The whole domain answers `no available server` | Not this service — the stack is mid-deploy. Wait it out. |
+| **A PATCH fails with a constraint error, or wipes fields you did not send** | `PATCH` in this API replaces the record; omitted fields are cleared. Read the record, change the field, send it all back — or use a purpose-built endpoint (`restock_part` rather than `update_part`). The tool descriptions say which ones are affected. |
 | **A write reports success and nothing changed in the CMMS** | It very likely changed a *different* record. The generated tools inherit the API's naming, and where that misleads, so do they — a stock booking landed on `PATCH /part-quantities/{id}`, which is a work order line, not inventory. Read the record back after any write through a tool that has no written description, and treat the mismatch as a candidate for the curated table. |
 
 Nothing here is guesswork: each row was produced at least once while getting the first client

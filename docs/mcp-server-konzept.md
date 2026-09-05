@@ -677,6 +677,31 @@ Gebrauch: **jeder Fehlgriff eines Klienten ist ein Kandidat für die kuratierte 
 dafür ist die zweite Schicht da (§4.3) — sie ist kein einmaliges Werk, sondern das Protokoll
 dessen, was schon einmal schiefging.
 
+### Derselbe Befund, eine Ebene tiefer: `PATCH` ersetzt
+
+Der zweite Anlauf — „setze die Menge von RLT Filter auf 20" — scheiterte anders und
+aufschlussreicher. `PATCH /parts/{id}` heißt Patch, verhält sich aber wie ein Replace: die
+Mapper sind MapStruct-Update-Methoden, und **1 von 58 setzt `IGNORE`**. Der Default ist
+`SET_TO_NULL`, also wird jedes Feld, das im Body fehlt, auf null geschrieben, jedes fehlende
+Primitiv auf 0 oder false. Betroffen sind 46 der 69 PATCH-Operationen.
+
+Das Web-Frontend merkt davon nichts, weil seine Formulare immer das vollständige Objekt senden.
+Ein Agent tut, was das Verb verspricht — nur das eine Feld — und löscht damit den Rest. Bei
+`Part.name` steht `@NotNull` davor, also schlägt der Schreibvorgang fehl statt still zu
+zerstören; die Fehlermeldung nennt die Bedingung und nicht die Ursache, weshalb das Modell im
+Kreis lief.
+
+Die Werkzeuge sagen es jetzt: an jeder betroffenen PATCH-Beschreibung hängt der Satz, dass
+weggelassene Felder geleert werden und dass man den Datensatz erst lesen und vollständig
+zurückschicken muss. Erkannt wird das am Body-Schema (`…PatchDTO`), also genau an der Menge, die
+auf eine ganze Entität gemappt wird — die 23 Teiloperationen mit eigenem DTO bekommen den
+Hinweis nicht. Auch kuratierte Beschreibungen bekommen ihn automatisch angehängt, statt sich
+darauf zu verlassen, dass 36 handgeschriebene Texte daran denken.
+
+**An der Wurzel behoben wäre es ein Einzeiler** (`@MapperConfig` mit `IGNORE`) — und eine
+Verhaltensänderung an 57 Upstream-Dateien gleichzeitig, die diese Instanz nicht testen kann.
+Deshalb steht sie in `CLAUDE.md` als benannte Option und nicht im Code.
+
 ### Was das für schreibende Klienten heißt
 
 Bis die kuratierte Abdeckung breiter ist, gilt für alles Schreibende: entweder ein kuratiertes

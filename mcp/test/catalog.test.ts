@@ -237,3 +237,36 @@ test('a generated writing tool admits it does not know what it changes', () => {
     assert.doesNotMatch(tool.description, /writing operation and nothing describes/);
   }
 });
+
+test('every PATCH that replaces the record says so, curated or not', async () => {
+  // MapStruct's default is SET_TO_NULL and 1 of 58 mappers overrides it, so a partial PATCH
+  // clears every field it omits. The web frontend never notices because its forms post the
+  // whole object; an agent sending only the field it wants to change destroys the rest, or
+  // trips a @NotNull column and gets an error that names nothing useful.
+  const { replacesWholeRecord } = await import('../src/tools/describe.js');
+  const catalog = catalogFor({ PROFILE: 'full' });
+
+  const affected = catalog.visible.filter((tool) => replacesWholeRecord(tool.operation));
+  assert.ok(affected.length > 40, `only ${affected.length} whole-record patches detected`);
+  for (const tool of affected) {
+    assert.match(tool.description, /replaces the whole record/, `${tool.name} omits the warning`);
+  }
+
+  // Curated entries are not exempt: update_part is hand-written and must still carry it.
+  const part = catalog.byName.get('update_part');
+  assert.ok(part);
+  assert.equal(replacesWholeRecord(part.operation), true);
+  assert.match(part.description, /replaces the whole record/);
+  assert.match(part.description, /restock_part/, 'and still point at the safer route');
+
+  // Sub-resource patches take purpose-built bodies and behave as named — no warning there.
+  const status = catalog.byName.get('change_work_order_status');
+  assert.ok(status);
+  assert.equal(replacesWholeRecord(status.operation), false);
+  assert.doesNotMatch(status.description, /replaces the whole record/);
+
+  // And it is a PATCH-only property.
+  for (const tool of catalog.visible.filter((t) => t.operation.method !== 'patch')) {
+    assert.doesNotMatch(tool.description, /replaces the whole record/);
+  }
+});

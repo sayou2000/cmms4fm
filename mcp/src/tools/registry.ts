@@ -3,7 +3,14 @@ import type { Logger } from '../logger.js';
 import { extractOperations, type Operation } from '../openapi/operations.js';
 import { resolveSchema } from '../openapi/schema.js';
 import type { JsonSchema, OpenApiDocument, OpenApiParameter } from '../openapi/types.js';
-import { classify, isBlocked, synthesiseDescription, type Classification } from './describe.js';
+import {
+  classify,
+  isBlocked,
+  replacesWholeRecord,
+  synthesiseDescription,
+  PATCH_REPLACES_WARNING,
+  type Classification,
+} from './describe.js';
 import { curatedFor } from './curated.js';
 import { matchesAnyGlob, toolNameFor } from './naming.js';
 import { resolveProfile, type Profile } from './profiles.js';
@@ -86,9 +93,20 @@ export function buildCatalog(document: OpenApiDocument, config: Config, logger: 
     }
     claimed.set(name, operation);
 
+    // The replace-not-merge warning is appended to curated descriptions too, rather than being
+    // left to each entry to remember. Forgetting it there is the same silent data loss as
+    // omitting it from a generated one, and a table of 36 hand-written strings is exactly where
+    // such a thing goes missing.
+    const description = curated
+      ? curated.description +
+        (replacesWholeRecord(operation) && !curated.description.includes('send all of it back')
+          ? ` ${PATCH_REPLACES_WARNING}`
+          : '')
+      : synthesiseDescription(operation);
+
     all.push({
       name,
-      description: curated?.description ?? synthesiseDescription(operation),
+      description,
       inputSchema: buildInputSchema(operation, schemaOptions),
       operation,
       classification: classify(operation),
