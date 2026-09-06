@@ -86,6 +86,12 @@ class WorkOrderServiceTest {
     private MessageSource messageSource;
     @Mock
     private CustomSequenceService customSequenceService;
+    /**
+     * {@code changeStatus} announces the completion and the status change instead of building the
+     * notifications itself. Without this mock the publish is an NPE inside the method under test.
+     */
+    @Mock
+    private com.grash.automation.event.SemanticEventPublisher semanticEventPublisher;
     @Mock
     private LicenseService licenseService;
     @Mock
@@ -1268,13 +1274,12 @@ class WorkOrderServiceTest {
         }
 
         @Test
-        void requesterNotification_fallbackToContactEmailWhenRequesterIdNull() {
+        void transitionToComplete_announcesTheClosure() {
+            // Two events for one call, and both are wanted: CLOSED is the rule engine's trigger
+            // and the admin notification's cue, while the status change is what the requester
+            // update listens to. Losing either one loses a different audience.
             wo.setStatus(Status.OPEN);
             dto.setStatus(Status.COMPLETE);
-            Request req = new Request();
-            req.setCreatedBy(null);
-            req.setContact("fallback@test.com");
-            wo.setParentRequest(req);
             stubBasic();
             when(workOrderRepository.saveAndFlush(any())).thenAnswer(inv -> {
                 WorkOrder saved = inv.getArgument(0);
@@ -1282,14 +1287,36 @@ class WorkOrderServiceTest {
                 return saved;
             });
             doNothing().when(assetService).stopDownTime(anyLong(), any());
+            when(workOrderRepository.findByAsset_Id(10L)).thenReturn(Collections.emptyList());
             when(workflowService.findByMainConditionAndCompany(any(), anyLong())).thenReturn(Collections.emptyList());
-            when(mailServiceFactory.getMailService()).thenReturn(mailService);
-            generalPreferences.setWoUpdateForRequesters(true);
 
             workOrderService.changeStatus(dto, 1L, user, "ios");
-            verify(mailService).sendMessageUsingThymeleafTemplate(
-                    eq(new String[]{"fallback@test.com"}),
-                    any(), anyMap(), any(), any(), any());
+
+            verify(semanticEventPublisher).publish(
+                    com.grash.automation.event.ChangeType.CLOSED,
+                    com.grash.automation.event.EntityType.WORK_ORDER,
+                    1L, company.getId(), user.getId());
+            verify(semanticEventPublisher).publishDomainEvent(
+                    new com.grash.event.fanout.WorkOrderStatusChanged(1L, company.getId(),
+                            Status.OPEN, Status.COMPLETE, user.getId()));
+        }
+
+        @Test
+        void statusUnchanged_announcesNothing() {
+            // The consumer checks the company preference and the parent request itself, so the
+            // one thing the service must still decide is whether the status moved at all.
+            wo.setStatus(Status.OPEN);
+            dto.setStatus(Status.OPEN);
+            stubBasic();
+            when(workOrderRepository.saveAndFlush(any())).thenAnswer(inv -> {
+                WorkOrder saved = inv.getArgument(0);
+                saved.setId(1L);
+                return saved;
+            });
+
+            workOrderService.changeStatus(dto, 1L, user, "ios");
+
+            verifyNoInteractions(semanticEventPublisher);
         }
 
         @Test
@@ -2933,7 +2960,11 @@ class WorkOrderServiceTest {
     class ChangeStatusRequesterWithId {
 
         @Test
-        void requesterWithId_sendsNotification() {
+        void statusChange_announcesTheChangeWithThePreviousStatus() {
+            // The requester notification and mail moved to WorkOrderFanout, which is tested on
+            // its own. What has to be true here is that the event carries the previous status:
+            // nothing can recover it after the commit, so leaving it out would silently stop the
+            // consumer from telling one status change from a re-save.
             WorkOrder wo = buildWorkOrder(1L);
             wo.setAsset(buildAsset(10L));
             wo.setStatus(Status.OPEN);
@@ -2941,7 +2972,6 @@ class WorkOrderServiceTest {
             Request req = new Request();
             req.setCreatedBy(5L);
             wo.setParentRequest(req);
-            User requester = buildUser(5L);
 
             WorkOrderChangeStatusDTO dto = new WorkOrderChangeStatusDTO();
             dto.setStatus(Status.COMPLETE);
@@ -2958,13 +2988,14 @@ class WorkOrderServiceTest {
             when(laborService.findByWorkOrder(1L)).thenReturn(Collections.emptyList());
             when(workflowService.findByMainConditionAndCompany(any(), anyLong())).thenReturn(Collections.emptyList());
             when(workOrderRepository.findByAsset_Id(10L)).thenReturn(Collections.emptyList());
-            when(mailServiceFactory.getMailService()).thenReturn(mailService);
-            when(userService.findById(5L)).thenReturn(Optional.of(requester));
             generalPreferences.setWoUpdateForRequesters(true);
 
             workOrderService.changeStatus(dto, 1L, user, "ios");
 
-            verify(notificationService).create(any(Notification.class));
+            verify(semanticEventPublisher).publishDomainEvent(
+                    new com.grash.event.fanout.WorkOrderStatusChanged(1L, company.getId(),
+                            Status.OPEN, Status.COMPLETE, user.getId()));
+            verify(notificationService, never()).create(any(Notification.class));
         }
     }
 

@@ -25,6 +25,13 @@ changes are captured from Hibernate's own dirty-property set rather than from pe
 points, that a rule's own writes are therefore announced back to it and only `CascadeContext`
 keeps that from looping, and that one transaction may announce at most
 `AUTOMATION_MAX_CHANGES_PER_TRANSACTION` changed rows before the rest is dropped with a warning;
+[`docs/domaenen-events.md`](docs/domaenen-events.md) for the domain events and the after-commit
+fan-out — read it before publishing a domain event, before adding a notification, mail or webhook
+to a service method, and before moving anything else out of a core transaction, because it
+records that a publish outside a transaction is silently dropped by every `AFTER_COMMIT`
+listener, that the fan-out must not sit behind `AUTOMATION_ENABLED` while the rule engine does,
+and where the line runs between an outgoing side effect (moved out) and a domain write (kept in,
+until Case E1 gives at-least-once delivery);
 [`docs/mcp-server-konzept.md`](docs/mcp-server-konzept.md) plus [`mcp/README.md`](mcp/README.md)
 for the MCP server — read them before touching `mcp/`, the `/mcp` nginx route or anything about
 `x-api-key`, because they record why tool names cannot come from `operationId`, why read/write
@@ -96,19 +103,25 @@ locally. The image build runs `mvn clean package -DskipTests`; use that, or noth
 is the machine's fault, not the code's.** `AbstractTemplateTest` renders with
 `Locale.ENGLISH`, but there is no `mailMessages_en.properties` — only the base bundle. Java's
 `ResourceBundle` fills that gap by falling back to the *JVM default locale* before it falls
-back to the base bundle, so on a German workstation every one of the eighteen tests in
-`MainLayoutConsumerTemplatesTest`, `MainLayoutTemplateTest` and `WorkOrderReportTemplateTest`
-renders German text and fails its first `assertTrue(html.contains(...))`. CI runs in English
-and is green. They all fail identically and at the first assertion, which makes them look like
-one broken shared fragment — they are not. Run them with `-Duser.language=en -Duser.country=US`
-to see them pass, or ignore exactly those eighteen. Making them locale-independent would mean
+back to the base bundle, so on a German workstation twenty of the thirty-four tests in
+`MainLayoutConsumerTemplatesTest` (16 of 18), `MainLayoutTemplateTest` (2 of 8) and
+`WorkOrderReportTemplateTest` (2 of 8) render German text and fail their first
+`assertTrue(html.contains(...))`. CI runs in English and is green. They all fail identically and
+at the first assertion, which makes them look like one broken shared fragment — they are not.
+Run them with `-Duser.language=en -Duser.country=US` to see them pass, or ignore exactly those
+twenty. (This said "eighteen" until 2026-09-06; the measured number is twenty. If a change makes
+it twenty-one, that one is yours.) Making them locale-independent would mean
 `setFallbackToSystemLocale(false)` on the message source, which is upstream's file and a good
 candidate to contribute back.
 
-**Local Maven tests are usable again.** The old note that the suite cannot run above JDK 22
-(Byte Buddy refusing newer class files) no longer holds — after the 2026-08-26 upstream sync
-the full suite runs on JDK 25. Only the five `*IntegrationTest` classes still error, and only
-because Testcontainers needs a running Docker.
+**Local Maven tests need a JDK 17 to 21 — JDK 25 does not compile this project at all.**
+`lombok.version` is pinned to 1.18.30 in `pom.xml`, which predates JDK 23; on JDK 25 the
+annotation processor dies during `compile` with
+`ExceptionInInitializerError: com.sun.tools.javac.code.TypeTag :: UNKNOWN`, before a single test
+runs. An earlier note here claimed the full suite runs on JDK 25 — measured on 2026-09-06, it
+does not, and the only JDK installed on the development machine is 25. Point `JAVA_HOME` at a 17
+(what CI uses) or bump Lombok; CI is unaffected either way. Once it compiles, the seven
+`*IntegrationTest` classes still error, and only because Testcontainers needs a running Docker.
 
 **The frontend build type-checks again, and `mvn compile`'s lesson applies here too.**
 `npm run build` is `tsc --noEmit && vite build`: Vite itself never looks at types — esbuild
@@ -526,6 +539,7 @@ fix silently overwritten:
 | Saved views | `SavedView*` (new files), `frontend` work-order and asset list pages, `hooks/useTableState.ts`, `hooks/useExport.ts` |
 | Request triage | Almost all new files (`service/triage/**`, `event/**`, `RequestQualification*`, `AssetTriageRepository`, `frontend` `QualificationCard.tsx` + `slices/requestQualification.ts`), so a sync should not touch them. The exceptions are the ones to watch: **`RequestController`** carries one added line at the end of `onRequestCreation` — the published `RequestCreatedEvent` — and upstream edits that method; and `RequestDetails.tsx` renders `<QualificationCard>` above the approve buttons. `AssetRepository` is deliberately *not* involved: the triage query lives in its own repository interface so it cannot conflict |
 | Rule automation (new engine) | `api/.../automation/**` and the `frontend` `Settings/Features/Automation/**`, `slices/automation.ts`, `models/owns/automation.ts` are all new, so a sync cannot touch them. Two edited files matter. **`AssetService`**: our earlier `EntityChangedEvent` publish in `dispatchAssetStatusChangeWebhook` is **gone again** — field changes now come from Hibernate, and publishing there too would run every rule twice; if a sync reintroduces it, delete it rather than merging it. `application.yml` carries the `automation.*` keys. On the frontend `router/app.tsx`, `Settings/Features/index.tsx`, `store/rootReducer.ts` plus the appended `en.ts`/`de.ts` keys each hold one added line or block. The one thing to re-check after a Hibernate or Spring upgrade is `automation/capture/ChangeListenerRegistrar`, which unwraps `SessionFactoryImpl` and calls `requireService(EventListenerRegistry)` — an API that has moved between Hibernate majors before. It runs in `@PostConstruct`, so a break fails the whole context and every integration test with it, which is the right way round |
+| Domain events and fan-out (Case E2) | `api/.../event/fanout/**` and `automation/event/SemanticEventPublisher` are new, so a sync cannot touch them. Five upstream files were **emptied out**, and that is where a merge will land: `RequestService.approve` and `cancel`, `WorkOrderService.changeStatus` and `ReadingController.processMeterTriggers` each lost their webhook/notification/mail block and gained a publish; `PurchaseOrderController.respond` gained `@Transactional` plus a publish; `ReadingService.create`/`update` gained `@Transactional` and an event. If upstream extends one of those blocks, the change belongs in the matching `event/fanout/` handler, **not** back into the service — merging it back reintroduces the pre-commit race the move removed, and the notification will then be sent twice. `AutomationMetaService.LIVE_SEMANTIC_TRIGGERS` names the five live pairs and has to stay in step with the publish points |
 | File search and filters | `content/own/Files/index.tsx`, `content/own/Files/Filters/**` |
 | File→asset/work-order links | `File` (`workOrders` join table), `FileShowDTO`, `FileMapper` |
 | Build tooling (frontend) | **Upstream is still Create React App; this fork is not.** `frontend/vite.config.ts` (new), `frontend/index.html` (moved out of `public/`), `frontend/package.json` scripts, `src/config.ts` + `src/serviceWorker.ts` (`import.meta.env` instead of `process.env`), `src/vite-env.d.ts`. Deleted here: `config-overrides.js`, `src/react-app-env.d.ts`. An upstream change touching the build, `public/index.html` or `REACT_APP_*` needs translating, not merging |

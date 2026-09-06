@@ -24,6 +24,9 @@ import jakarta.persistence.EntityManager;
 import jakarta.persistence.criteria.*;
 import lombok.Data;
 import lombok.RequiredArgsConstructor;
+import com.grash.automation.event.ChangeType;
+import com.grash.automation.event.EntityType;
+import com.grash.automation.event.SemanticEventPublisher;
 import com.grash.event.RequestCreatedEvent;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
@@ -61,6 +64,7 @@ public class RequestService {
     private final AssetService assetService;
     private final RequestPortalService requestPortalService;
     private final ApplicationEventPublisher eventPublisher;
+    private final SemanticEventPublisher semanticEventPublisher;
     private WorkflowService workflowService;
 
     @Value("${frontend.url}")
@@ -375,43 +379,16 @@ public class RequestService {
                 assetService.save(savedRequest.getAsset());
             }
 
-            Map<String, Object> webhookPayload = new HashMap<>();
-            webhookPayload.put("requestId", savedRequest.getId());
-            webhookPayload.put("requestTitle", savedRequest.getTitle());
-            webhookPayload.put("previousStatus", "PENDING");
-            webhookPayload.put("newStatus", "APPROVED");
-            webhookPayload.put("workOrderId", createdWorkOrder.getId());
-            Object serializedRequest = requestMapper.toShowDto(savedRequest);
-            webhookDispatchService.dispatchWebhook(user.getCompany(), WebhookEvent.WORK_REQUEST_STATUS_CHANGE,
-                    webhookPayload,
-                    "changedRequest", serializedRequest, null, null, null, null, null);
-
-            List<User> usersToMail =
-                    userService.findByCompany(user.getCompany().getId()).stream().filter(user1 -> user1.getRole().getCode().equals(RoleCode.LIMITED_ADMIN))
-                            .filter(user1 -> user1.isEnabled() && user1.getUserSettings().isEmailNotified()).collect(Collectors.toList());
-            String title = messageSource.getMessage("request_approved", null, Helper.getLocale(user));
-
-            if (savedRequest.getCreatedBy() != null) {
-                User requester = userService.findById(savedRequest.getCreatedBy()).get();
-                String message = messageSource.getMessage("request_approved_description",
-                        new Object[]{savedRequest.getTitle()}, Helper.getLocale(user));
-                notificationService.createMultiple(Collections.singletonList(new Notification(message, requester,
-                        NotificationType.WORK_ORDER, createdWorkOrder.getId())), true, title);
-                usersToMail.add(requester);
-            }
-            String message2 = messageSource.getMessage("request_approved_description_limited_admin",
-                    new Object[]{user.getFullName(), savedRequest.getTitle()}, Helper.getLocale(user));
-            notificationService.createMultiple(userService.findByCompany(user.getCompany().getId()).stream().filter(user1 -> user1.getRole().getCode().equals(RoleCode.LIMITED_ADMIN) && !user1.getId().equals(user.getId())).map(user1 -> new Notification(message2, user1,
-                    NotificationType.WORK_ORDER, createdWorkOrder.getId())).collect(Collectors.toList()), true, title);
-
-            Map<String, Object> mailVariables = new HashMap<String, Object>() {{
-                put("workOrderLink", frontendUrl + "/app/work-orders/" + createdWorkOrder.getId());
-                put("workOrderTitle", createdWorkOrder.getTitle());
-            }};
-            mailServiceFactory.getMailService().sendMessageUsingThymeleafTemplate(usersToMail.stream().map(User::getEmail)
-                            .toArray(String[]::new), title, mailVariables, "approved-request.html",
-                    Helper.getLocale(user),
-                    null);
+            // Announced, not carried out. The webhook, the notifications and the mail that used
+            // to run here are consumers now (RequestFanout), so they see a committed request and
+            // a committed work order instead of racing the transaction that creates them. The
+            // rule engine hears the same event.
+            //
+            // The created work order is deliberately *not* announced as well: WorkOrder is a
+            // tracked entity, so the capture pipeline already reports its creation, and saying it
+            // twice would run every WORK_ORDER:CREATED rule twice.
+            semanticEventPublisher.publish(ChangeType.APPROVED, EntityType.REQUEST, savedRequest.getId(),
+                    user.getCompany().getId(), user.getId());
 
             return createdWorkOrder;
         } else throw new CustomException("Request not found", HttpStatus.NOT_FOUND);
@@ -437,46 +414,15 @@ public class RequestService {
                             user.getCompany().getId());
             workflows.forEach(workflow -> workflowService.runRequest(workflow, savedRequest));
 
-            Map<String, Object> webhookPayload = new HashMap<>();
-            webhookPayload.put("requestId", savedRequest.getId());
-            webhookPayload.put("requestTitle", savedRequest.getTitle());
-            webhookPayload.put("previousStatus", "PENDING");
-            webhookPayload.put("newStatus", "CANCELLED");
-            webhookPayload.put("cancellationReason", reason);
-            Object serializedRequest = requestMapper.toShowDto(savedRequest);
-            webhookDispatchService.dispatchWebhook(user.getCompany(), WebhookEvent.WORK_REQUEST_STATUS_CHANGE,
-                    webhookPayload,
-                    "changedRequest", serializedRequest, null, null, null, null, null);
+            Request cancelledRequest = save(savedRequest);
 
-            String title = messageSource.getMessage("request_rejected", null, Helper.getLocale(user));
-            List<User> usersToMail =
-                    userService.findByCompany(user.getCompany().getId()).stream().filter(user1 -> user1.getRole().getCode().equals(RoleCode.LIMITED_ADMIN))
-                            .filter(user1 -> user1.isEnabled() && user1.getUserSettings().isEmailNotified()).collect(Collectors.toList());
+            // Same reasoning as in approve: the webhook, the notifications and the mail are
+            // consumers (RequestFanout), and they read the cancellation reason off the committed
+            // record rather than being handed it.
+            semanticEventPublisher.publish(ChangeType.REJECTED, EntityType.REQUEST, savedRequest.getId(),
+                    user.getCompany().getId(), user.getId());
 
-            if (savedRequest.getCreatedBy() != null) {
-                User requester = userService.findById(savedRequest.getCreatedBy()).get();
-
-                String message = messageSource.getMessage("request_rejected_description",
-                        new Object[]{savedRequest.getTitle()}, Helper.getLocale(user));
-                notificationService.createMultiple(Collections.singletonList(new Notification(message, requester,
-                        NotificationType.INFO, null)), true, title);
-                usersToMail.add(requester);
-            }
-            String message2 = messageSource.getMessage("request_rejected_description_limited_admin",
-                    new Object[]{user.getFullName(), savedRequest.getTitle()}, Helper.getLocale(user));
-            notificationService.createMultiple(userService.findByCompany(user.getCompany().getId()).stream().filter(user1 -> user1.getRole().getCode().equals(RoleCode.LIMITED_ADMIN) && !user1.getId().equals(user.getId())).map(user1 -> new Notification(message2, user1,
-                    NotificationType.INFO, null)).collect(Collectors.toList()), true, title);
-
-            Map<String, Object> mailVariables = new HashMap<String, Object>() {{
-                put("requestLink", frontendUrl + "/app/requests/" + savedRequest.getId());
-                put("requestTitle", savedRequest.getTitle());
-            }};
-            mailServiceFactory.getMailService().sendMessageUsingThymeleafTemplate(usersToMail.stream().map(User::getEmail)
-                            .toArray(String[]::new), title, mailVariables, "rejected-request.html",
-                    Helper.getLocale(user),
-                    null);
-
-            return save(savedRequest);
+            return cancelledRequest;
         } else throw new CustomException("Request not found", HttpStatus.NOT_FOUND);
     }
 

@@ -4,6 +4,9 @@ import com.grash.advancedsearch.SearchCriteria;
 import com.grash.dto.PurchaseOrderPatchDTO;
 import com.grash.dto.PurchaseOrderShowDTO;
 import com.grash.dto.SuccessResponse;
+import com.grash.automation.event.ChangeType;
+import com.grash.automation.event.EntityType;
+import com.grash.automation.event.SemanticEventPublisher;
 import com.grash.exception.CustomException;
 import com.grash.mapper.PartMapper;
 import com.grash.mapper.PartQuantityMapper;
@@ -25,6 +28,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
 
 import jakarta.servlet.http.HttpServletRequest;
@@ -55,6 +59,7 @@ public class PurchaseOrderController {
     private final WorkflowService workflowService;
     private final WebhookDispatchService webhookDispatchService;
     private final PartMapper partMapper;
+    private final SemanticEventPublisher semanticEventPublisher;
 
     @Value("${frontend.url}")
     private String frontendUrl;
@@ -168,8 +173,18 @@ public class PurchaseOrderController {
         } else throw new CustomException("PurchaseOrder not found", HttpStatus.NOT_FOUND);
     }
 
+    /**
+     * Approving or rejecting a purchase order, in one transaction and announced afterwards.
+     *
+     * <p>{@code @Transactional} is not decoration. Approval restocks every part on the order and
+     * only then writes the new status, each save committing on its own — so a failure halfway
+     * through left the parts restocked and the order still PENDING, ready to be approved again
+     * and restocked twice. It is also what an {@code AFTER_COMMIT} listener needs to exist at
+     * all: without a transaction the event below is published, accepted and silently dropped.
+     */
     @PatchMapping("/{id}/respond")
     @PreAuthorize("hasRole('ROLE_CLIENT')")
+    @Transactional
     public PurchaseOrderShowDTO respond(@Parameter(description = "Whether the purchase order is approved") @RequestParam("approved") boolean approved, @PathVariable("id") Long id,
                                         HttpServletRequest req) {
         User user = userService.whoami(req);
@@ -194,7 +209,11 @@ public class PurchaseOrderController {
                         });
                     }
                     savedPurchaseOrder.setStatus(approved ? ApprovalStatus.APPROVED : ApprovalStatus.REJECTED);
-                    return setPartQuantities(purchaseOrderMapper.toShowDto(purchaseOrderService.save(savedPurchaseOrder)));
+                    PurchaseOrder respondedPurchaseOrder = purchaseOrderService.save(savedPurchaseOrder);
+                    semanticEventPublisher.publish(approved ? ChangeType.APPROVED : ChangeType.REJECTED,
+                            EntityType.PURCHASE_ORDER, respondedPurchaseOrder.getId(),
+                            user.getCompany().getId(), user.getId());
+                    return setPartQuantities(purchaseOrderMapper.toShowDto(respondedPurchaseOrder));
                 } else
                     throw new CustomException("The purchase order has already been approved",
                             HttpStatus.NOT_ACCEPTABLE);

@@ -1,7 +1,10 @@
 package com.grash.service;
 
+import com.grash.automation.event.CurrentActor;
+import com.grash.automation.event.SemanticEventPublisher;
 import com.grash.dto.ReadingHistogramDTO;
 import com.grash.dto.ReadingPatchDTO;
+import com.grash.event.fanout.ReadingRecorded;
 import com.grash.exception.CustomException;
 import com.grash.mapper.ReadingMapper;
 import com.grash.model.Reading;
@@ -12,6 +15,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.*;
 import java.util.concurrent.TimeUnit;
@@ -22,6 +26,7 @@ public class ReadingService {
     private final ReadingRepository readingRepository;
     private final ReadingMapper readingMapper;
     private final LicenseService licenseService;
+    private final SemanticEventPublisher semanticEventPublisher;
     private MeterService meterService;
 
     @Autowired
@@ -30,15 +35,44 @@ public class ReadingService {
         this.meterService = meterService;
     }
 
+    /**
+     * Writes a reading and announces it.
+     *
+     * <p>The announcement is what moved the meter alarm out of {@code ReadingController}: the
+     * threshold check, the work order it raises, the notification and the webhook are a consumer
+     * now ({@code MeterTriggerFanout}). {@code @Transactional} is required for that — an
+     * {@code AFTER_COMMIT} listener does not fire without a transaction to commit — and it is
+     * also what makes the alarm react to a reading that exists, which the controller could not:
+     * it evaluated the triggers <em>before</em> saving.
+     */
+    @Transactional
     public Reading create(Reading Reading) {
-        return readingRepository.save(Reading);
+        Reading savedReading = readingRepository.save(Reading);
+        announce(savedReading);
+        return savedReading;
     }
 
+    @Transactional
     public Reading update(Long id, ReadingPatchDTO reading) {
         if (readingRepository.existsById(id)) {
             Reading savedReading = readingRepository.findById(id).get();
-            return readingRepository.save(readingMapper.updateReading(savedReading, reading));
+            Reading updatedReading = readingRepository.save(readingMapper.updateReading(savedReading, reading));
+            announce(updatedReading);
+            return updatedReading;
         } else throw new CustomException("Not found", HttpStatus.NOT_FOUND);
+    }
+
+    /**
+     * A corrected reading is announced like a new one, because the controller used to run the
+     * trigger check on both. Editing a value up past a threshold therefore still raises the work
+     * order it would have raised had the value arrived that way.
+     */
+    private void announce(Reading reading) {
+        if (reading.getMeter() == null || reading.getMeter().getId() == null) {
+            return;
+        }
+        semanticEventPublisher.publishDomainEvent(new ReadingRecorded(reading.getId(),
+                reading.getMeter().getId(), reading.getValue(), CurrentActor.userIdOrNull()));
     }
 
     public Collection<Reading> getAll() {

@@ -114,29 +114,51 @@ class AutomationMetaServiceTest {
         @Test
         @DisplayName("are live for every watched entity, without a list saying so")
         void areDerivedFromTheWatchedEntities() {
-            List<AutomationMetaDTO.Trigger> live = describe(true).triggers().stream()
-                    .filter(AutomationMetaDTO.Trigger::live).toList();
+            List<AutomationMetaDTO.Trigger> derived = describe(true).triggers().stream()
+                    .filter(AutomationMetaDTO.Trigger::live)
+                    .filter(trigger -> trigger.changeType() == ChangeType.CREATED
+                            || trigger.changeType() == ChangeType.UPDATED)
+                    .toList();
 
-            // Creation and field change for each watched class, and nothing else — Hibernate
-            // reports every insert and every update, so no per-entity wiring decides this.
-            // If this number moves, TrackedEntities changed, which is the intended coupling.
-            assertEquals(TrackedEntities.all().size() * 2, live.size());
-            assertTrue(live.stream().allMatch(trigger ->
-                            trigger.changeType() == ChangeType.CREATED
-                                    || trigger.changeType() == ChangeType.UPDATED),
-                    "only the two change types a column diff can reveal are automatic");
-            assertTrue(live.stream().anyMatch(trigger -> trigger.entityType() == EntityType.ASSET
+            // Creation and field change for each watched class — Hibernate reports every insert
+            // and every update, so no per-entity wiring decides this. If this number moves,
+            // TrackedEntities changed, which is the intended coupling.
+            assertEquals(TrackedEntities.all().size() * 2, derived.size());
+            assertTrue(derived.stream().anyMatch(trigger -> trigger.entityType() == EntityType.ASSET
                     && trigger.changeType() == ChangeType.UPDATED));
         }
 
         @Test
-        @DisplayName("a semantic change type stays unavailable until something publishes it")
-        void semanticChangeTypesAreNotAutomatic() {
+        @DisplayName("a semantic change type is live exactly where a service publishes it")
+        void semanticChangeTypesFollowTheirPublishPoints() {
+            List<AutomationMetaDTO.Trigger> semantic = describe(true).triggers().stream()
+                    .filter(AutomationMetaDTO.Trigger::live)
+                    .filter(trigger -> trigger.changeType() != ChangeType.CREATED
+                            && trigger.changeType() != ChangeType.UPDATED)
+                    .toList();
+
             // "Approved" is not visible in a column diff — only the service performing it knows
-            // that is what the update meant. Reported as not live rather than hidden, so a rule
-            // is refused rather than silently never firing.
+            // that is what the update meant. So each of these has to be matched by a
+            // SemanticEventPublisher call, and the pairs are named in LIVE_SEMANTIC_TRIGGERS.
+            assertEquals(5, semantic.size());
+            assertTrue(semantic.stream().anyMatch(trigger -> trigger.entityType() == EntityType.REQUEST
+                    && trigger.changeType() == ChangeType.APPROVED));
+            assertTrue(semantic.stream().anyMatch(trigger -> trigger.entityType() == EntityType.WORK_ORDER
+                    && trigger.changeType() == ChangeType.CLOSED));
+        }
+
+        @Test
+        @DisplayName("a semantic change type without a publisher stays unavailable")
+        void unpublishedSemanticChangeTypesAreNotLive() {
+            // Reported as not live rather than hidden, so a rule configured against one is
+            // refused up front instead of silently never firing. ARCHIVED has no publisher
+            // anywhere, and neither has an approval of an asset.
             assertTrue(describe(true).triggers().stream()
-                    .filter(trigger -> trigger.changeType() == ChangeType.APPROVED)
+                    .filter(trigger -> trigger.changeType() == ChangeType.ARCHIVED)
+                    .noneMatch(AutomationMetaDTO.Trigger::live));
+            assertTrue(describe(true).triggers().stream()
+                    .filter(trigger -> trigger.entityType() == EntityType.ASSET
+                            && trigger.changeType() == ChangeType.APPROVED)
                     .noneMatch(AutomationMetaDTO.Trigger::live));
         }
 

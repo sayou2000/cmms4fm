@@ -12,6 +12,10 @@ import com.grash.dto.imports.WorkOrderImportDTO;
 import com.grash.dto.license.LicenseEntitlement;
 import com.grash.dto.workOrder.WorkOrderPostDTO;
 import com.grash.dto.workOrder.WorkOrderSendReportDTO;
+import com.grash.automation.event.ChangeType;
+import com.grash.automation.event.EntityType;
+import com.grash.automation.event.SemanticEventPublisher;
+import com.grash.event.fanout.WorkOrderStatusChanged;
 import com.grash.exception.CustomException;
 import com.grash.factory.StorageServiceFactory;
 import com.grash.mapper.PreventiveMaintenanceMapper;
@@ -88,6 +92,7 @@ public class WorkOrderService {
     private WorkflowService workflowService;
     private final MessageSource messageSource;
     private final CustomSequenceService customSequenceService;
+    private final SemanticEventPublisher semanticEventPublisher;
 
     @Value("${frontend.url}")
     private String frontendUrl;
@@ -905,11 +910,10 @@ public class WorkOrderService {
                     originalWorkOrder);
 
             if (patchedWorkOrder.getStatus().equals(Status.COMPLETE) && !savedWorkOrderStatusBefore.equals(Status.COMPLETE)) {
-                List<User> admins =
-                        userService.findWorkersByCompany(user.getCompany().getId()).stream().filter(ownUser -> ownUser.getRole().getViewPermissions().contains(PermissionEntity.SETTINGS) && ownUser.isEnabled() && ownUser.getUserSettings().shouldEmailUpdatesForWorkOrders()).collect(Collectors.toList());
-                notificationService.createMultiple(admins.stream().map(admin -> new Notification(messageSource.getMessage("complete_work_order_content", new String[]{patchedWorkOrder.getTitle(), user.getFullName()}, Helper.getLocale(admin)), admin,
-                                NotificationType.WORK_ORDER, id)).collect(Collectors.toList()), true,
-                        messageSource.getMessage("complete_work_order", null, Helper.getLocale(user)));
+                // Still here, and each for its own reason. The old rule engine runs inline by
+                // design and migrating it is the later half of E2, deliberately not today. The
+                // review prompt needs the client platform, which is a property of the request
+                // and not of the work order, so it cannot be recovered after the commit.
                 Collection<Workflow> workflows =
                         workflowService.findByMainConditionAndCompany(WFMainCondition.WORK_ORDER_CLOSED,
                                 user.getCompany().getId());
@@ -918,40 +922,21 @@ public class WorkOrderService {
                 if ("ios".equalsIgnoreCase(platform) || "android".equalsIgnoreCase(platform)) {
                     reviewEligibilityService.incrementWorkOrder(reviewEligibilityService.getOrCreate(user));
                 }
+
+                // The admin notifications that used to be built here are a consumer now
+                // (WorkOrderFanout.onClosed), and the rule engine hears the same event.
+                semanticEventPublisher.publish(ChangeType.CLOSED, EntityType.WORK_ORDER, id,
+                        user.getCompany().getId(), user.getId());
             }
-            if (user.getCompany().getCompanySettings().getGeneralPreferences().isWoUpdateForRequesters()
-                    && savedWorkOrderStatusBefore != patchedWorkOrder.getStatus()
-                    && patchedWorkOrder.getParentRequest() != null) {
-                Long requesterId = patchedWorkOrder.getParentRequest().getCreatedBy();
-                String requesterEmail = null;
-                User requester = null;
-                if (requesterId == null) {
-                    String contact = patchedWorkOrder.getParentRequest().getContact();
-                    if (contact != null && Helper.isValidEmailAddress(contact)) {
-                        requesterEmail = contact;
-                    }
-                } else {
-                    requester = userService.findById(requesterId).get();
-                    requesterEmail = requester.getEmail();
-                }
-                Locale locale = Helper.getLocale(user);
-                String message = messageSource.getMessage("notification_wo_request",
-                        new Object[]{patchedWorkOrder.getTitle(),
-                                messageSource.getMessage(patchedWorkOrder.getStatus().toString(), null, locale)},
-                        locale);
-                if (requester != null) {
-                    notificationService.create(new Notification(message, requester,
-                            NotificationType.WORK_ORDER, id));
-                }
-                if ((requester != null && requester.getUserSettings().shouldEmailUpdatesForRequests() && requester.isEnabled()) || requesterEmail != null) {
-                    Map<String, Object> mailVariables = new HashMap<String, Object>() {{
-                        put("workOrderLink", frontendUrl + "/app/work-orders/" + id);
-                        put("message", message);
-                    }};
-                    mailServiceFactory.getMailService().sendMessageUsingThymeleafTemplate(new String[]{requesterEmail},
-                            messageSource.getMessage("request_update", null, locale), mailVariables, "requester" +
-                                    "-update.html", Helper.getLocale(user), null);
-                }
+            if (savedWorkOrderStatusBefore != patchedWorkOrder.getStatus()) {
+                // The requester update, for any status and not only completion. The previous
+                // status travels with it because nothing can recover it afterwards; the two
+                // remaining conditions the old code checked here — the company preference and
+                // whether there is a parent request at all — are properties of the committed
+                // record and are checked by the consumer.
+                semanticEventPublisher.publishDomainEvent(new WorkOrderStatusChanged(id,
+                        user.getCompany().getId(), savedWorkOrderStatusBefore,
+                        patchedWorkOrder.getStatus(), user.getId()));
             }
             return patchedWorkOrder;
         } else throw new CustomException("Forbidden", HttpStatus.FORBIDDEN);

@@ -53,11 +53,22 @@ public class AutomationMetaService {
     /**
      * Semantic triggers with a publish point today, as {@code ENTITY_TYPE:CHANGE_TYPE}.
      *
-     * <p>Empty on purpose: none are wired yet. {@code REQUEST:APPROVED} is the first one worth
-     * having, and adding it means publishing an {@code EntityChangedEvent} from
-     * {@code RequestService.approve} and naming it here.
+     * <p>These are the ones no column diff can produce, because they are a reading of a change
+     * rather than a property of it. Each entry here has a matching
+     * {@code SemanticEventPublisher.publish(...)} call in the service that performs it, and the
+     * pair is what the editor's "not yet available" marker depends on — a trigger named here
+     * without a publisher is a trigger the user can configure and never see fire.
+     *
+     * <p>Publish points, in the same order: {@code RequestService.approve} and {@code cancel},
+     * {@code WorkOrderService.changeStatus} on the transition into COMPLETE, and
+     * {@code PurchaseOrderController.respond}.
      */
-    private static final Set<String> LIVE_SEMANTIC_TRIGGERS = Set.of();
+    private static final Set<String> LIVE_SEMANTIC_TRIGGERS = Set.of(
+            "REQUEST:APPROVED",
+            "REQUEST:REJECTED",
+            "WORK_ORDER:CLOSED",
+            "PURCHASE_ORDER:APPROVED",
+            "PURCHASE_ORDER:REJECTED");
 
     @Transactional(readOnly = true)
     public AutomationMetaDTO describe(Company company) {
@@ -90,9 +101,12 @@ public class AutomationMetaService {
         List<AutomationMetaDTO.Trigger> triggers = new ArrayList<>();
         for (EntityType entityType : EntityType.values()) {
             for (ChangeType changeType : ChangeType.values()) {
-                boolean live = watched.contains(entityType)
-                        ? DERIVED_FROM_DIFF.contains(changeType)
-                        : LIVE_SEMANTIC_TRIGGERS.contains(entityType + ":" + changeType);
+                // Both sources, not one or the other. Written as a ternary this read "a watched
+                // entity has exactly the derived triggers", which quietly made every semantic
+                // trigger dead: all five entity types are watched, so the second branch was
+                // unreachable and the list below could never take effect.
+                boolean live = (watched.contains(entityType) && DERIVED_FROM_DIFF.contains(changeType))
+                        || LIVE_SEMANTIC_TRIGGERS.contains(entityType + ":" + changeType);
                 triggers.add(new AutomationMetaDTO.Trigger(entityType, changeType, live,
                         live && changeType == ChangeType.UPDATED
                                 ? changeableFieldsOf(entityType, subjects) : List.of()));

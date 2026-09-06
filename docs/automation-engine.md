@@ -70,6 +70,13 @@ Beide laufen in `AutomationEngine.handle` zusammen. Zwei Typen statt einem, weil
 Typ zwei Listener bräuchte — und der nicht-transaktionale würde für ein von Hand publiziertes
 Ereignis **vor** dem Commit feuern. Die Regel läse dann je nach Timing den alten Zustand.
 
+Seit dem E2-Umbau hört an `EntityChangedEvent` noch ein zweiter Konsument mit: `FanoutListener`
+schickt Webhook, Benachrichtigung und Mail. Der Unterschied ist wichtig, weil er entscheidet, wo
+neuer Code hingehört — die Regel-Engine liegt hinter `AUTOMATION_ENABLED` und ist standardmäßig
+aus, der Fan-out ersetzt Verhalten, das es immer gab, und läuft deshalb immer. Aus demselben
+Grund kann der Fan-out **nicht** an `CommittedEntityChange` hängen: die Erfassung sammelt bei
+ausgeschalteter Engine gar nichts. Siehe [`domaenen-events.md`](domaenen-events.md).
+
 ### 1.4 Der Sammler: warum nicht pro Anweisung publiziert wird
 
 Eine Anfrage kann dieselbe Zeile mehrfach schreiben. `AssetService.patch` schreibt die Anlage,
@@ -128,8 +135,12 @@ eine Bedingung über „die Ersatzteile" einen Quantor bräuchte, den das Modell
 - **Akteur:** `createdBy` bleibt bei allem leer, was die Engine anlegt (Konzept §9.1). Folge:
   niemand wird benachrichtigt, und ein Benutzer ohne „Aufträge anderer sehen" findet einen
   regelerzeugten Auftrag nicht in seiner Liste.
-- **Semantische Auslöser:** genehmigt / abgelehnt / abgeschlossen haben noch keine
-  Publikationsstelle. `LIVE_SEMANTIC_TRIGGERS` ist leer.
+- **Semantische Auslöser: erledigt.** Genehmigt / abgelehnt / abgeschlossen haben seit dem
+  E2-Umbau eine Publikationsstelle; `LIVE_SEMANTIC_TRIGGERS` enthält fünf Einträge
+  (`REQUEST:APPROVED`, `REQUEST:REJECTED`, `WORK_ORDER:CLOSED`, `PURCHASE_ORDER:APPROVED`,
+  `PURCHASE_ORDER:REJECTED`). Wer eine weitere ergänzt, liest
+  [`domaenen-events.md`](domaenen-events.md) — dort steht auch, warum das Publizieren über
+  `SemanticEventPublisher` läuft und nicht direkt über `ApplicationEventPublisher`.
 - **Alt-Engine:** läuft unverändert weiter und wird an denselben Stellen aufgerufen. Beim Testen
   verwirrend: eine doppelt angelegte Aufgabe kann aus einer Alt-Regel kommen.
 
@@ -155,10 +166,13 @@ Alles andere — Bedingungen, Feldfilter, Metadaten, GUI — folgt von selbst.
 
 ### 2b — Eine semantische Änderungsart (größer)
 
-Für „genehmigt", „abgelehnt", „abgeschlossen", die in keiner Spalte stehen:
+Für „genehmigt", „abgelehnt", „abgeschlossen", die in keiner Spalte stehen. Das ausführliche
+Rezept samt Fan-out steht in [`domaenen-events.md`](domaenen-events.md) §7; hier nur der Teil,
+den die Engine sieht:
 
-1. `eventPublisher.publishEvent(EntityChangedEvent.root(...))` im Dienst, **innerhalb** der
-   Transaktion, Company gesetzt, Akteur über `CurrentActor.userIdOrNull()`.
+1. `semanticEventPublisher.publish(changeType, entityType, id, companyId, actorId)` im Dienst,
+   **innerhalb** der Transaktion. Den Akteur als Argument, wenn die Methode ihn schon hat — die
+   Überladung ohne ihn greift auf `CurrentActor.userIdOrNull()` zurück.
 2. Eintrag in `AutomationMetaService.LIVE_SEMANTIC_TRIGGERS` als `ENTITY_TYPE:CHANGE_TYPE`.
 3. Prüfen, ob dieselbe Änderung schon als `UPDATED` gemeldet wird — dann feuern zwei Trigger für
    ein Geschehen. Das ist zulässig und gewollt (die Regel wählt den passenden), muss aber beim
@@ -174,7 +188,7 @@ Für „genehmigt", „abgelehnt", „abgeschlossen", die in keiner Spalte stehe
     [ ] Platzhalter in ActionParameters
     [ ] i18n für die wichtigsten Felder
     [ ] Trigger-Zähler im AutomationMetaServiceTest
-2b  [ ] publishEvent im Dienst, in der Transaktion, Company + Akteur
+2b  [ ] SemanticEventPublisher.publish im Dienst, in der Transaktion, Company + Akteur
     [ ] Eintrag in LIVE_SEMANTIC_TRIGGERS
     [ ] Folgeereignisse per event.child(...)
     [ ] @Mock ApplicationEventPublisher im Dienst-Test
@@ -190,10 +204,10 @@ Konkret: `${trigger.workOrder.…}`, `${trigger.request.…}`, `SET_CUSTOM_FIELD
 `CustomFieldResolver` für die übrigen `CustomFieldEntityType`-Werte. Ohne das sind die zehn
 lebenden Trigger nur zur Hälfte nutzbar. **Der nächste Schritt.**
 
-**2. Semantische Auslöser, mit Meldung genehmigt/abgelehnt zuerst.** Deckt ab, was die
-Alt-Engine noch tut, und verbindet sich mit der KI-Triage. Dabei entscheiden, ob die Triage ihr
-eigenes `RequestCreatedEvent` behält oder auf `EntityChangedEvent` umzieht — zwei
-Ereignismechanismen für dasselbe Geschehen sind eine Altlast in Zeitlupe.
+**2. Semantische Auslöser — erledigt** (Case E2, [`domaenen-events.md`](domaenen-events.md)).
+Fünf Kombinationen sind live. Offen bleibt daran der Anschluss an die KI-Triage und die Frage,
+ob die Triage ihr eigenes `RequestCreatedEvent` behält oder auf `EntityChangedEvent` umzieht —
+zwei Ereignismechanismen für dasselbe Geschehen sind eine Altlast in Zeitlupe.
 
 **3. Zuweisung in `CREATE_WORK_ORDER`.** Solange `createdBy` leer bleibt, landet ein
 regelerzeugter Auftrag anonym in der Liste und benachrichtigt niemanden. Ein Parameter

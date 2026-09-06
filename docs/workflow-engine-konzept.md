@@ -202,6 +202,12 @@ Zeile im ganzen Vorhaben.
 Ein Feature-Flag (`automation.enabled`, Default `false`) bleibt damit Dauerzustand, nicht
 Rollback-Phase.
 
+**Nachtrag (Case E2).** Der Umbau der Kerntransaktionen hat daran nichts geändert: der alte
+`WorkflowService` wird weiterhin inline aufgerufen, in `RequestService.approve`, `cancel` und
+`WorkOrderService.changeStatus`. Die Migration auf eine einzige Trigger-Maschine bleibt der
+bewusste spätere Schritt aus demselben Rechengrund wie oben. Beim Testen ist zu wissen, dass eine
+doppelt angelegte Aufgabe aus einer Alt-Regel stammen kann.
+
 ### 4.2 Ereignis-Schicht
 
 Ein generisches Ereignis statt eines pro Trigger:
@@ -226,6 +232,14 @@ und Dedup nicht implementierbar. `actorUserId` braucht es, weil im Async-Thread 
 Publiziert wird **in den Services**, neben dem `save` — und zwar an denselben Stellen, an denen
 heute `dispatchWebhook` gerufen wird. Diese 22 Stellen sind bereits die fachlich richtigen. Für
 den Walking Skeleton (§6) ist genau **eine** davon nötig: der Anlagen-Statuswechsel.
+
+**Nachtrag (Case E2).** Feldänderungen kommen inzwischen nicht mehr von Hand, sondern aus der
+Erfassungs-Pipeline (§6, Phase 1G); von Hand publiziert wird nur noch das *Semantische*, und
+zwar über `SemanticEventPublisher` statt direkt — weil eine Publikation ohne aktive Transaktion
+von keinem `AFTER_COMMIT`-Listener gehört und dabei keine Zeile Log hinterlässt. Zugleich hat die
+Ereignis-Schicht ihren zweiten Konsumenten bekommen: Webhook, Benachrichtigung und Mail hängen
+nun hinter dem Commit statt in der Kerntransaktion. Details und die Grenze zwischen „ausgehende
+Nebenwirkung" und „fachlicher Schreibvorgang" in [`domaenen-events.md`](domaenen-events.md).
 
 > **Richtungsentscheidung, nicht Phase-1-Arbeit:** mittelfristig wird `WebhookDispatchService`
 > zum *Listener* von `EntityChangedEvent`. Dann gibt es eine Ereignisquelle mit zwei Konsumenten

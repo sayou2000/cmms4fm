@@ -1,5 +1,7 @@
 package com.grash.service;
 
+import com.grash.automation.event.ChangeType;
+import com.grash.automation.event.EntityType;
 import com.grash.advancedsearch.FilterField;
 import com.grash.advancedsearch.SearchCriteria;
 import com.grash.dto.RequestApproveDTO;
@@ -82,6 +84,12 @@ class RequestServiceTest {
      */
     @Mock
     private ApplicationEventPublisher eventPublisher;
+    /**
+     * Approval and rejection announce themselves instead of carrying out the fan-out. Without
+     * this mock the publish is an NPE in the middle of the method under test.
+     */
+    @Mock
+    private com.grash.automation.event.SemanticEventPublisher semanticEventPublisher;
 
     private Company company;
     private User user;
@@ -445,15 +453,30 @@ class RequestServiceTest {
             when(requestRepository.findById(1L)).thenReturn(Optional.of(saved));
             when(requestRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
             when(workflowService.findByMainConditionAndCompany(any(), anyLong())).thenReturn(Collections.emptyList());
-            when(messageSource.getMessage(anyString(), any(), any())).thenReturn("t");
-            when(userService.findByCompany(1L)).thenReturn(new ArrayList<>());
-            when(userService.findById(1L)).thenReturn(Optional.of(user));
-            when(mailServiceFactory.getMailService()).thenReturn(mailService);
 
             Request result = requestService.cancel(1L, "Not needed", user);
 
             assertTrue(result.isCancelled());
             assertEquals("Not needed", result.getCancellationReason());
+        }
+
+        @Test
+        void cancel_announcesTheRejection() {
+            // The webhook, the notifications and the mail are a consumer now. What the service
+            // still owes is the announcement — and it has to carry the acting user, because the
+            // consumer runs where there is no security context to read one from.
+            role.getViewPermissions().add(PermissionEntity.SETTINGS);
+            Request saved = buildRequest(1L);
+            saved.setWorkOrder(null);
+            when(requestRepository.findById(1L)).thenReturn(Optional.of(saved));
+            when(requestRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+            when(workflowService.findByMainConditionAndCompany(any(), anyLong())).thenReturn(Collections.emptyList());
+
+            requestService.cancel(1L, "Not needed", user);
+
+            verify(semanticEventPublisher).publish(ChangeType.REJECTED, EntityType.REQUEST, 1L,
+                    company.getId(), user.getId());
+            verifyNoInteractions(notificationService);
         }
 
         @Test
