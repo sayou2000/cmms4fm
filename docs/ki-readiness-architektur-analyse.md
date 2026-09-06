@@ -65,14 +65,14 @@ existiert bereits; sie muss durabel gemacht, semantisch gehoben und aggregierbar
 
 ---
 
-## 2. Zehn Infrastruktur-Cases, geordnet nach den fünf Säulen
+## 2. Elf Infrastruktur-Cases, geordnet nach den fünf Säulen
 
 | Säule | Cases |
 |---|---|
 | **I. Event-Driven Architecture** | E1 Outbox-Rückgrat · E2 Semantische Events & Transaktions-Entkopplung |
 | **II. Semantic Data & Context Readiness** | D1 Enum-/ID-Fundament · D2 RAG-/Semantik-Schicht · D3 Durable Historie & Zeitreihen |
 | **III. Agentic Interoperability** | A1 MCP-Schreibpfad & agentische Workflows · A2 Agenten-Identität & API-Kontrakt |
-| **IV. Extensibility & Dynamic Rules Engine** | X1 Konfigurierbare Status-Maschine · X2 Notification-Routing & SLA/Eskalation |
+| **IV. Extensibility & Dynamic Rules Engine** | X1 Konfigurierbare Status-Maschine · X2 Notification-Routing & SLA/Eskalation · X3 Anreicherung aus Stammdaten |
 | **V. Telemetrie & KI-Feedback-Loops** | T1 Strukturierte Telemetrie & Feedback-Loops |
 
 ---
@@ -156,6 +156,35 @@ WO-Erstellung und Webhook synchron im HTTP-Request. Dazu die Koexistenz **zweier
 erzeugt: „REQUEST_APPROVED → WO created" wird beobachtbar, regelbasiert subsequenzierbar und — über
 E1 — an Agenten streambar. Zugleich löst es die strukturelle Schwäche, dass jede neue Logik
 (Eskalation, Berichte, KI-Analysen) in bestehende Service-Transaktionen eingreifen müsste.
+
+**Umsetzungsstand (2026-09-06): Punkte 1–3 umgesetzt, Punkt 4 offen.** Details in
+[`domaenen-events.md`](domaenen-events.md).
+
+- **Punkt 1 erledigt.** Fünf semantische Trigger sind live (`REQUEST:APPROVED/REJECTED`,
+  `WORK_ORDER:CLOSED`, `PURCHASE_ORDER:APPROVED/REJECTED`). Publiziert wird über einen
+  `SemanticEventPublisher` statt fünfmal direkt — weil eine Publikation ohne aktive Transaktion
+  von keinem `AFTER_COMMIT`-Listener gehört wird und dabei **nichts** protokolliert.
+  `PurchaseOrderController.respond` saß genau in dieser Falle. Nebenbei aufgefallen und mit
+  behoben: `AutomationMetaService` hätte die Liste gar nicht wirksam werden lassen — die
+  Live-Berechnung war ein Ternär statt eines Oders, und da alle fünf Entitätstypen beobachtet
+  sind, war der semantische Zweig unerreichbar.
+- **Punkt 2 erledigt, mit einer bewusst gezogenen Grenze.** Webhook, Benachrichtigung und Mail
+  sind Konsumenten (`event/fanout/**`, eigener Executor mit `CallerRunsPolicy`). Fachliche
+  Schreibvorgänge — Downtime-Stopp, Labor-Stops, PM-Reschedule, Teile-Zubuchung — sind **in** der
+  Transaktion geblieben. Sie hinauszuziehen setzt eine At-least-once-Zustellung voraus, also
+  E1; ohne die hieße „PM-Reschedule ist ein Konsument", dass ein JVM-Absturz die Wartung
+  unbemerkt nicht neu plant.
+- **Punkt 3 erledigt.** Der Zählerstand-Alarm ist ein Konsument von `ReadingRecorded`. Er lief
+  im Create-Pfad bisher **vor** dem Speichern der Ablesung, der Auftrag referenzierte also eine
+  Ablesung, die es noch nicht gab — und überlebte ein Scheitern des Speicherns.
+- **Punkt 4 offen, wie vorgesehen.** Der alte `WorkflowService` läuft unverändert inline weiter.
+- **Zwei Ereignisarten statt einer**, und das ist der Preis: `WorkOrderStatusChanged` und
+  `ReadingRecorded` passen auf keinen `ChangeType` (`UPDATED` würde jede
+  WORK_ORDER:UPDATED-Regel verdoppeln, `EntityType` hat kein `METER`). Sie gehen durch denselben
+  Publisher, sind aber keine Regel-Trigger.
+- **Nebenbefund, mit behoben:** `PurchaseOrderController.respond` hatte keine Transaktion. Die
+  Teile wurden einzeln zugebucht, der Status danach separat — ein Fehler dazwischen ließ die
+  Teile gebucht und die Bestellung genehmigungsfähig, also **doppelt** buchbar.
 
 ---
 
@@ -374,6 +403,45 @@ passiert", die kein reaktives Ereignis liefern kann.
 
 ---
 
+#### Case X3 — Anreicherung aus Stammdaten: Verantwortlichkeit von der Anlage übernehmen
+
+**Ist-Zustand & Engpass.** Eine wiederkehrende FM-Zuordnung — „das an der Anlage gepflegte Team bzw.
+den Verantwortlichen auf die Meldung/den Auftrag übernehmen" — ist heute **weder als Regel baubar
+noch sinnvoll hartkodierbar**. Das Datenmodell trägt sie (`Asset.primaryUser`, `Asset.teams`;
+`WorkOrderBase.team`/`primaryUser`/`assignedTo`), und der Trigger existiert bereits (`REQUEST:UPDATED`
+mit Feldfilter `asset` ist live, ebenso `WORK_ORDER:CREATED`). Was fehlt, sind exakt die zwei Teile,
+die [`automation-engine.md §3`](automation-engine.md) als **„der nächste Schritt"** führt: ein
+**`ASSIGN_FIELD`-Handler für Nicht-Anlagen** (die Aktionen sind noch anlagenzentriert, §1.5) und
+**Platzhalter, die aus der verknüpften Anlage lesen** (`ActionParameters.PLACEHOLDERS` kennt heute im
+Wesentlichen `${trigger.asset.…}`, nicht `${trigger.request.asset.team}`). Die Alt-Engine kann es
+ebenfalls nicht: ihr `ASSIGN`-Zweig setzt einen **bei Regel-Anlage fest gewählten** Wert
+(`action.getTeam()`), nicht „das Team *dieser* Anlage" — dieselbe Laufzeitwert-Lücke, die
+[`ki-meldungs-triage.md §2`](ki-meldungs-triage.md) für `ASSIGN_ASSET` beschreibt.
+
+Abzugrenzen von der **Disposition** (Triage §6.1, „eigenes Team oder Fremdvergabe"): die ist ein
+Urteils-/Lernproblem und gehört zur KI-Triage. X3 ist das **deterministische** Gegenstück — reine
+Stammdaten-Propagation, kein Rateanteil.
+
+**Infrastruktureller Lösungsansatz.** Ein `AssignFieldHandler` der **Anreicherungs**-Klasse
+([`workflow-engine-konzept.md §4.4`](workflow-engine-konzept.md)): Feldzuweisung auf dem auslösenden
+Objekt, synchron in der Transaktion, damit API-Antwort und Webhook sofort korrekt sind und **kein**
+Folgeereignis/keine Kaskade entsteht. Dazu die Platzhalter-Whitelist um den Pfad Meldung→Anlage→
+(`team`|`primaryUser`) erweitern. Beispielregel: *Trigger* Meldung geändert (Feld `asset`) · *Bedingung*
+`request.team` leer · *Aktion* `request.team ← ${trigger.request.asset.team}`. Drei Modellierungs-
+Feinheiten sind vorab zu klären: `Asset.teams` ist mehrwertig, `Request.team` einwertig (eine
+„nimm-eines"-Regel nötig; `primaryUser→primaryUser` ist sauber 1:1); der Auslösepunkt (bei der
+Anlagen-Zuordnung *vor* der Freigabe vs. auf dem erzeugten Auftrag); und zuweisen vs. vorschlagen —
+weil deterministisch aus gepflegten Stammdaten, ist automatisches Zuweisen hier vertretbar.
+
+**Zukunftswert & KI-Enabling.** X3 ist der **Musterfall für „konfigurierbar statt hartkodiert"**: die
+Zuordnung wird pro Instanz einstellbar, statt als starre Funktion für alle einprogrammiert zu werden.
+Er schaltet zugleich den `ASSIGN_FIELD`-Handler und die Fremdobjekt-Platzhalter frei, die auch X1/X2
+und jede spätere „Anreicherung aus dem Kontext" brauchen — und er ist die deterministische Basis, auf
+der die lernende Disposition (Triage §6.1) später aufsetzen kann, statt sie zu ersetzen. Geringe
+Abhängigkeit: der Trigger ist bereits live, sodass X3 vorgezogen werden kann.
+
+---
+
 ### Säule V — Telemetrie & KI-Feedback-Loops
 
 #### Case T1 — Strukturierte Telemetrie, Observability-Hygiene & KI-Feedback-Loops
@@ -419,7 +487,7 @@ dieses Forks (Ein-Personen-Kontext, Monats-Sync-Kosten, „eigene Änderungen g�
 
 | Case | Säule | Impact | Aufwand | Abhängig von | Einordnung |
 |---|---|---|---|---|---|
-| **E2** Semantische Events publizieren | I | ●●● | ●○○ | — | **Sofort-Quick-Win** — 3 Stellen + `LIVE_SEMANTIC_TRIGGERS`, schaltet vorhandene Engine-Fähigkeit frei |
+| **E2** Semantische Events publizieren | I | ●●● | ●○○ | — | **Umgesetzt 2026-09-06**, Punkte 1–3; Punkt 4 (Alt-Engine-Migration) bleibt offen. Der Aufwand war höher als ●○○: nicht die Publikation, sondern das Herausziehen des Fan-outs samt Tests |
 | **D1** Enum→STRING + stabile IDs | II | ●●● | ●●○ | — | **Quick Win, strategisch** — mechanische Migration, größter Data-Integrity-Blocker |
 | **T1a** Telemetrie-Hygiene + Healthcheck-Fix | V | ●●○ | ●○○ | — | Quick Win, Fundament für alles Operative |
 | **T1c** `rpt_triage_quality`-View | V | ●●○ | ●○○ | — | Quick Win — nur eine View auf existierenden Tabellen |
@@ -427,6 +495,7 @@ dieses Forks (Ein-Personen-Kontext, Monats-Sync-Kosten, „eigene Änderungen g�
 | **A2** Scoped Keys + Agent-Audit + Error-Contract | III | ●●○ | ●●○ | (E1) | Governance-Voraussetzung, **bevor** A1 mit Schreibrechten produktiv geht |
 | **A1** MCP-Schreibpfad (Complete/Approve, Upload, Bulk, Push) | III | ●●● | ●●○ | A2, (E1) | **Der** Agenten-Enabler; Komposit-Endpoints sind dünne neue Controller |
 | **X2** SLA/Eskalation + Notification-Routing | IV | ●●○ | ●●○ | E2 | Hoher fachlicher Nutzen, nutzt Engine-Muster + Quartz; inkrementell |
+| **X3** Anreicherung aus Stammdaten (Team/Verantwortlicher von der Anlage) | IV | ●●○ | ●●○ | — | **Nah am Quick Win** — Trigger ist live, es fehlt nur der `ASSIGN_FIELD`-Handler + Platzhalter (der „nächste Schritt" der Engine); vorziehbar |
 | **D3** Durable Historie & Zeitreihen | II | ●●● | ●●○ | E1 | Teilt sich das Outbox-Bauwerk; die PdM-Zeitachse |
 | **X1** Konfigurierbare Status-Maschine | IV | ●●○ | ●●● | E2 | Hohe Wirkung, größter Refaktorings-Umfang; nach E2 deutlich einfacher |
 | **D2** RAG-/Semantik-Schicht (tsvector/pgvector, Graph, Tombstones) | II | ●●● | ●●● | E1, D1 | Größter KI-Nutzen, aber zuverlässig erst **nach** E1 (Deletes) und D1 (Werte); `rpt_`-Basis macht den Einstieg inkrementell |
@@ -440,8 +509,9 @@ Welle 1 — Fundament (Quick Wins, überwiegend additiv, konfliktarm im Sync)
 Welle 2 — Event-Rückgrat & Governance
    E1  →  A2
 
-Welle 3 — Agenten-Offensive
+Welle 3 — Agenten-Offensive & Engine-Breite
    A1  (+ kuratierte MCP-Expansion)   ‖   X2  (erste "Stufe 2"-Nutzung der Engine)
+   X3  (Anreicherung aus Stammdaten) — vorziehbar, da der Trigger schon live ist
 
 Welle 4 — KI-Datenschicht auf stabilem Fundament
    D3  (Outbox→Historie)  →  D2  (Ingestion/Embeddings/Graph)
