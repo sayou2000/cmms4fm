@@ -521,7 +521,7 @@ fix silently overwritten:
 
 | Area | Files |
 |---|---|
-| Signup hardening | `UserService.signup` |
+| Signup hardening | `UserService.signup`: joining an organization always needs an invitation (406), not only when invitation mails are on. Upstream's super-admin check behind it (403, since 2026-09) is therefore unreachable here and kept only to shrink the diff. **Also `UserServiceTest`**: upstream's `superAdminRole_withoutInvitationEmailOrInvitation_throwsForbidden` is adapted to expect the 406 - when upstream edits that test, re-apply |
 | Default super admin password | `ApplicationInitializer.getSuperAdminSignupRequest` |
 | Premium unlock | `LicenseService`, `ApplicationInitializer`, `application.yml` |
 | Category-bound custom fields | `CustomField`, `CustomFieldService`, `CustomFieldValueService`, `CustomFieldRepository`, `AssetService.setAssetCustomFields`. **Also `AssetServiceTest`**: `AssetService` calls the *seven*-argument `setCustomFields` because it passes the category id, while upstream's tests stub the six-argument overload. Mockito's strict stubs then reject the call and the surrounding verifies fail with it. When upstream touches that test, re-add the seventh `any()` — the test is right about their code and wrong about ours |

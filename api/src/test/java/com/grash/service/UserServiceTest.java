@@ -451,8 +451,12 @@ class UserServiceTest {
             assertEquals(HttpStatus.NOT_ACCEPTABLE, ex.getHttpStatus());
         }
 
+        // Upstream expects 403 from its "enable invitation via email" check. In this fork the
+        // signup hardening rejects every uninvited join first, with 406, so that check is never
+        // reached - the super admin is refused all the same, just one line earlier. See the
+        // "Signup hardening" row in CLAUDE.md.
         @Test
-        void superAdminRole_withoutInvitationEmailOrInvitation_throwsForbidden() {
+        void superAdminRole_withoutInvitationEmailOrInvitation_isRejectedAsUninvited() {
             Role superAdminRole = Role.builder()
                     .id(3L).name("Super Admin").roleType(RoleType.ROLE_SUPER_ADMIN)
                     .code(RoleCode.ADMIN).paid(false).build();
@@ -468,7 +472,8 @@ class UserServiceTest {
 
             CustomException ex = assertThrows(CustomException.class,
                     () -> userService.signup(signupRequest));
-            assertEquals(HttpStatus.FORBIDDEN, ex.getHttpStatus());
+            assertEquals(HttpStatus.NOT_ACCEPTABLE, ex.getHttpStatus());
+            assertEquals("You are not invited to this organization for this role", ex.getMessage());
         }
 
         @Test

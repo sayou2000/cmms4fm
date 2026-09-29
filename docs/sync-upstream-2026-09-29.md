@@ -67,6 +67,7 @@ des Alarms.
 * `npm ls` im Frontend: Lockfile und `package.json` konsistent, `npm ci` im Image
   funktioniert also.
 * Tests laufen lokal nicht (JDK 25, Mockito) — maßgeblich ist die CI auf JDK 17.
+* **CI nach dem Push:** erster Lauf scheiterte an einem 502 von Maven Central (keine Tests gelaufen), der zweite an einem echten Fehler: 2138 von 2139 grün, rot war `UserServiceTest.superAdminRole_withoutInvitationEmailOrInvitation_throwsForbidden`. Upstreams neue Super-Admin-Prüfung (403) steht im Fork hinter der Signup-Härtung, die jeden Beitritt ohne Einladung schon mit 406 abweist — der Super-Admin wird weiterhin abgelehnt, nur eine Zeile früher. Der Test ist angepasst, die Tabellenzeile „Signup hardening" nennt ihn.
 * **Deploy-Pipeline vorab repariert:** Der Coolify-Trigger, der am 07.09. mit
   TLS-Timeout scheiterte, lief beim Rerun in 6 s durch.
 
