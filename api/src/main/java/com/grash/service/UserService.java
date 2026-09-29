@@ -17,6 +17,7 @@ import com.grash.mapper.UserMapper;
 import com.grash.model.*;
 import com.grash.model.enums.PermissionEntity;
 import com.grash.model.enums.RoleCode;
+import com.grash.model.enums.RoleType;
 import com.grash.repository.UserRepository;
 import com.grash.repository.VerificationTokenRepository;
 import com.grash.security.CustomUserDetail;
@@ -156,8 +157,11 @@ public class UserService {
     }
 
     public SignupSuccessResponse<User> signup(UserSignupRequest userReq) {
+        userReq.setCompanyName(Sanitizer.cleanText(userReq.getCompanyName()));
+        userReq.setEmail(userReq.getEmail().toLowerCase());
         User user = userMapper.toModel(userReq);
-        user.setEmail(user.getEmail().toLowerCase());
+        Sanitizer.sanitizeUser(user);
+
         if (userRepository.existsByEmailIgnoreCase(user.getEmail())) {
             throw new CustomException("Email is already in use", HttpStatus.UNPROCESSABLE_ENTITY);
         }
@@ -187,6 +191,10 @@ public class UserService {
                 throw new CustomException("You are not invited to this organization for this role",
                         HttpStatus.NOT_ACCEPTABLE);
             }
+            if (!enableInvitationViaEmail && role.getRoleType().equals(RoleType.ROLE_SUPER_ADMIN)
+                    && userInvitations.isEmpty())
+                throw new CustomException("You should enable invitation via email to signup as superadmin",
+                        HttpStatus.FORBIDDEN);
             userInvitations.sort(Comparator.comparing(UserInvitation::getCreatedAt).reversed());
             user.setRole(role);
             if (role.getCompanySettings() == null) {
@@ -345,6 +353,8 @@ public class UserService {
         try {
             email = email.toLowerCase();
             User user = findByEmail(email).get();
+            if (!user.isEnabled())
+                throw new CustomException("User is disabled", HttpStatus.NOT_ACCEPTABLE);
             Helper helper = new Helper();
             String password = helper.generateString().replace("-", "").substring(0, 8).toUpperCase();
 
@@ -398,6 +408,10 @@ public class UserService {
 
     public Collection<User> findByCompany(Long id) {
         return userRepository.findByCompany_Id(id);
+    }
+
+    public Optional<User> findCompanyOwner(Long id) {
+        return userRepository.findCompanyOwner(id);
     }
 
     public Collection<User> findWorkersByCompany(Long id) {

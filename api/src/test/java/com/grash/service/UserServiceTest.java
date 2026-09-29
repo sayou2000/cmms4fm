@@ -452,6 +452,86 @@ class UserServiceTest {
         }
 
         @Test
+        void superAdminRole_withoutInvitationEmailOrInvitation_throwsForbidden() {
+            Role superAdminRole = Role.builder()
+                    .id(3L).name("Super Admin").roleType(RoleType.ROLE_SUPER_ADMIN)
+                    .code(RoleCode.ADMIN).paid(false).build();
+            signupRequest.setRole(superAdminRole);
+            mappedUser.setRole(superAdminRole);
+
+            when(userMapper.toModel(signupRequest)).thenReturn(mappedUser);
+            when(userRepository.existsByEmailIgnoreCase("new@test.com")).thenReturn(false);
+            when(passwordEncoder.encode("password123")).thenReturn("encoded-pass");
+            when(roleService.findById(3L)).thenReturn(Optional.of(superAdminRole));
+            when(userInvitationService.findByRoleAndEmail(3L, "new@test.com"))
+                    .thenReturn(new ArrayList<>());
+
+            CustomException ex = assertThrows(CustomException.class,
+                    () -> userService.signup(signupRequest));
+            assertEquals(HttpStatus.FORBIDDEN, ex.getHttpStatus());
+        }
+
+        @Test
+        void superAdminRole_withInvitationWithoutEmailFeature_success() {
+            Role superAdminRole = Role.builder()
+                    .id(3L).name("Super Admin").roleType(RoleType.ROLE_SUPER_ADMIN)
+                    .code(RoleCode.ADMIN).paid(false).build();
+            CompanySettings superAdminSettings = new CompanySettings();
+            superAdminSettings.setCompany(company);
+            superAdminRole.setCompanySettings(superAdminSettings);
+            signupRequest.setRole(superAdminRole);
+            mappedUser.setRole(superAdminRole);
+            UserInvitation invitation = new UserInvitation("new@test.com", superAdminRole);
+            invitation.setId(1L);
+            invitation.setCreatedBy(1L);
+
+            when(userMapper.toModel(signupRequest)).thenReturn(mappedUser);
+            when(userRepository.existsByEmailIgnoreCase("new@test.com")).thenReturn(false);
+            when(passwordEncoder.encode("password123")).thenReturn("encoded-pass");
+            when(roleService.findById(3L)).thenReturn(Optional.of(superAdminRole));
+            when(userInvitationService.findByRoleAndEmail(3L, "new@test.com"))
+                    .thenReturn(new ArrayList<>(List.of(invitation)));
+            when(userRepository.save(any(User.class))).thenAnswer(inv -> inv.getArgument(0));
+            when(jwtTokenProvider.createToken(eq("new@test.com"), anyList()))
+                    .thenReturn("signup-token");
+
+            SignupSuccessResponse<User> response = userService.signup(signupRequest);
+
+            assertTrue(response.isSuccess());
+            assertNotNull(response.getUser());
+            assertEquals(company, response.getUser().getCompany());
+        }
+
+        @Test
+        void superAdminRole_withInvitationEmail_success() {
+            ReflectionTestUtils.setField(userService, "enableInvitationViaEmail", true);
+            Role superAdminRole = Role.builder()
+                    .id(3L).name("Super Admin").roleType(RoleType.ROLE_SUPER_ADMIN)
+                    .code(RoleCode.ADMIN).paid(false).build();
+            signupRequest.setRole(superAdminRole);
+            mappedUser.setRole(superAdminRole);
+            UserInvitation invitation = new UserInvitation("new@test.com", superAdminRole);
+            invitation.setId(1L);
+            invitation.setCreatedBy(1L);
+
+            when(userMapper.toModel(signupRequest)).thenReturn(mappedUser);
+            when(userRepository.existsByEmailIgnoreCase("new@test.com")).thenReturn(false);
+            when(passwordEncoder.encode("password123")).thenReturn("encoded-pass");
+            when(roleService.findById(3L)).thenReturn(Optional.of(superAdminRole));
+            when(userInvitationService.findByRoleAndEmail(3L, "new@test.com"))
+                    .thenReturn(new ArrayList<>(List.of(invitation)));
+            when(userRepository.findById(1L)).thenReturn(Optional.of(user));
+            when(userRepository.save(any(User.class))).thenAnswer(inv -> inv.getArgument(0));
+            when(jwtTokenProvider.createToken(eq("new@test.com"), anyList()))
+                    .thenReturn("signup-token");
+
+            SignupSuccessResponse<User> response = userService.signup(signupRequest);
+
+            assertTrue(response.isSuccess());
+            assertNotNull(response.getUser());
+        }
+
+        @Test
         void newCompany_noMultiInstanceEntitlement_throws() {
             when(userMapper.toModel(signupRequest)).thenReturn(mappedUser);
             when(userRepository.existsByEmailIgnoreCase("new@test.com")).thenReturn(false);
@@ -2109,6 +2189,42 @@ class UserServiceTest {
             verify(userRepository).save(targetUser);
             verify(cacheService).evictUserFromCache("target@test.com");
             verify(refreshTokenService).revokeAllForUser(targetUser);
+        }
+    }
+
+    @Nested
+    class FindCompanyOwner {
+
+        @Test
+        void ownerExists_returnsCompanyOwner() {
+            User owner = buildUser(2L, "owner@test.com");
+            owner.setOwnsCompany(true);
+            when(userRepository.findCompanyOwner(1L)).thenReturn(Optional.of(owner));
+
+            Optional<User> result = userService.findCompanyOwner(1L);
+
+            assertTrue(result.isPresent());
+            assertSame(owner, result.get());
+            verify(userRepository).findCompanyOwner(1L);
+        }
+
+        @Test
+        void noOwner_returnsEmpty() {
+            when(userRepository.findCompanyOwner(1L)).thenReturn(Optional.empty());
+
+            Optional<User> result = userService.findCompanyOwner(1L);
+
+            assertTrue(result.isEmpty());
+            verify(userRepository).findCompanyOwner(1L);
+        }
+
+        @Test
+        void delegatesToRepositoryWithCompanyId() {
+            when(userRepository.findCompanyOwner(42L)).thenReturn(Optional.empty());
+
+            userService.findCompanyOwner(42L);
+
+            verify(userRepository).findCompanyOwner(42L);
         }
     }
 }

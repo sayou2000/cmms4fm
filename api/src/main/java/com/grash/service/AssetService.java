@@ -96,6 +96,11 @@ public class AssetService {
         if ((asset.getBarCode() == null || asset.getBarCode().isBlank()) && Boolean.TRUE.equals(user.getCompany().getCompanySettings().getGeneralPreferences().getAutoGenerateAssetBarcode())) {
             asset.setBarCode(UUID.randomUUID().toString());
         }
+        if (asset.getParentAsset() != null && asset.getLocation() == null) {
+            asset.setLocation(assetRepository.findById(asset.getParentAsset().getId())
+                    .orElseThrow(() -> new CustomException("Parent asset not found", HttpStatus.NOT_FOUND))
+                    .getLocation());
+        }
         Sanitizer.sanitizeAsset(asset);
         Asset savedAsset = assetRepository.saveAndFlush(asset);
         em.refresh(savedAsset);

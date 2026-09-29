@@ -171,6 +171,7 @@ export default function MeterDetails({
               label={t('reading')}
               value={editReadingValue}
               placeholder={t('meter_reading')}
+              keyboardType="decimal-pad"
               onChangeText={(newValue) => setEditReadingValue(newValue)}
               error={false}
               multiline={false}
@@ -246,6 +247,7 @@ export default function MeterDetails({
                 setReadingValue(newValue);
               }}
               disabled={isSubmitting}
+              keyboardType="decimal-pad"
               error={false}
               onBlur={function (e: any): void {}}
               multiline={false}

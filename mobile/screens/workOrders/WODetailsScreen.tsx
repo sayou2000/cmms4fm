@@ -798,7 +798,7 @@ export default function WODetailsScreen({
           {renderConfirmDelete()}
           {renderConfirmArchive()}
           <KeyboardAvoidingView
-            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
             keyboardVerticalOffset={Platform.OS === 'ios' ? headerHeight : 0}
             style={styles.container}
           >
@@ -1040,6 +1040,7 @@ export default function WODetailsScreen({
                             onPress={() =>
                               navigation.navigate('SelectParts', {
                                 onChange: (selectedParts) => {
+                                  // throw new Error('nuuur');
                                   dispatch(
                                     editWOPartQuantities(
                                       id,

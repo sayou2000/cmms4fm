@@ -264,6 +264,7 @@ function WorkOrders() {
   const [openUpdateModal, setOpenUpdateModal] = useState<boolean>(false);
   const [openDrawer, setOpenDrawer] = useState<boolean>(false);
   const [openFilterDrawer, setOpenFilterDrawer] = useState<boolean>(false);
+  const [calendarRefreshTrigger, setCalendarRefreshTrigger] = useState<number>(0);
   const { setTitle } = useContext(TitleContext);
   const { workOrderId } = useParams();
   const { showSnackBar } = useContext(CustomSnackBarContext);
@@ -523,12 +524,14 @@ function WorkOrders() {
     setOpenAddModal(false);
     if (copyWorkOrderData) handleOpenDetails(newWorkOrder.id);
     setCopyWorkOrderData(null);
+    setCalendarRefreshTrigger((trigger) => trigger + 1);
     showSnackBar(t('wo_create_success'), 'success');
   };
   const onCreationFailure = (err) =>
     showSnackBar(getErrorMessage(err, t('wo_create_failure')), 'error');
   const onEditSuccess = () => {
     setOpenUpdateModal(false);
+    setCalendarRefreshTrigger((trigger) => trigger + 1);
     showSnackBar(t('changes_saved_success'), 'success');
   };
   const onEditFailure = (err) => showSnackBar(t('wo_update_failure'), 'error');
@@ -1341,6 +1344,7 @@ function WorkOrders() {
                   criteria.filterFields.find((ff) => ff.field === 'company')
                     ?.values?.[0] ?? null
                 }
+                eventsRefreshTrigger={calendarRefreshTrigger}
               />
             ) : (
               <WorkloadView

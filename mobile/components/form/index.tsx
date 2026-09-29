@@ -616,7 +616,9 @@ export default function Form(props: OwnProps) {
                       </Text>
                     ) : field.type === 'dateRange' ? (
                       <View>
-                        <Text style={{ fontWeight: 'bold' }}>{field.label}</Text>
+                        <Text style={{ fontWeight: 'bold' }}>
+                          {field.label}
+                        </Text>
                         <DateRangePicker
                           value={formik.values[field.name] ?? [null, null]}
                           onChange={(newValue) => {

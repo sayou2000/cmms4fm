@@ -251,4 +251,6 @@
              relativeToChangelogFile="true"/>
     <include file="changelog/2026_09_04_00000000001_automation_engine.xml"
              relativeToChangelogFile="true"/>
+    <include file="changelog/2026_09_09_1788956680_user_settings_language.xml"
+             relativeToChangelogFile="true"/>
 </databaseChangeLog>

@@ -32,13 +32,13 @@ import Asset, { AssetDTO } from '../models/owns/asset';
 import Location from '../models/owns/location';
 import { useZendesk } from 'react-use-zendesk';
 import { UiConfiguration } from 'src/models/owns/uiConfiguration';
-import { googleTrackingId, IS_LOCALHOST } from '../config';
-import ReactGA from 'react-ga4';
-import { getLicenseValidity } from '../slices/license';
+import * as Sentry from '@sentry/react';
 import { fireGa4Event } from '../utils/overall';
 import { useUtmTracker } from '@nik0di3m/utm-tracker-hook';
 import { addDays } from 'date-fns';
 import { shutdown } from '@intercom/messenger-js-sdk';
+import Clarity from '@microsoft/clarity';
+import { clarityId, IS_LOCALHOST } from '../config';
 
 interface AuthState {
   isInitialized: boolean;
@@ -534,15 +534,28 @@ export const AuthProvider: FC<AuthProviderProps> = (props) => {
   const updateUserInfos = async () => {
     const user = await getUserInfos();
     setCompanyId(user.companyId);
-    const clarity = (window as any).clarity;
-    if (typeof clarity === 'function') {
-      clarity('identify', user.email);
-    }
     return user;
   };
-  const setupUser = async (companySettings: CompanySettings) => {
+  const setupUser = async (
+    user: UserResponseDTO,
+    companySettings: CompanySettings
+  ) => {
     switchLanguage({
-      lng: companySettings.generalPreferences.language.toLowerCase()
+      lng:
+        user.language?.toLowerCase() ||
+        companySettings.generalPreferences.language.toLowerCase()
+    });
+    if (clarityId)
+      Clarity.identify(
+        user.email,
+        undefined,
+        undefined,
+        user.firstName + ' ' + user.lastName
+      );
+    Sentry.setUser({
+      id: user.id,
+      email: user.email,
+      username: user.firstName + ' ' + user.lastName
     });
   };
   const getInfos = async (): Promise<void> => {
@@ -566,7 +579,7 @@ export const AuthProvider: FC<AuthProviderProps> = (props) => {
         setSession(newAccessToken, newRefreshToken);
         const user = await updateUserInfos();
         const company = await api.get<Company>(`companies/${user.companyId}`);
-        await setupUser(company.companySettings);
+        await setupUser(user, company.companySettings);
         dispatch({
           type: 'INITIALIZE',
           payload: {
@@ -632,7 +645,7 @@ export const AuthProvider: FC<AuthProviderProps> = (props) => {
     }
     const user = await updateUserInfos();
     const company = await api.get<Company>(`companies/${user.companyId}`);
-    await setupUser(company.companySettings);
+    await setupUser(user, company.companySettings);
     //@ts-ignore
     dispatch({
       type: 'LOGIN',
@@ -666,6 +679,8 @@ export const AuthProvider: FC<AuthProviderProps> = (props) => {
     }
     await api.post('auth/logout', {});
     setSession(null, null);
+    Sentry.setUser(null);
+    if (clarityId && !IS_LOCALHOST) Clarity.identify('');
     dispatch({ type: 'LOGOUT' });
   };
 

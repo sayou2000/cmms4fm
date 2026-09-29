@@ -11,6 +11,7 @@ import {
   Card,
   CircularProgress,
   Divider,
+  Drawer,
   Grid,
   Stack,
   styled,
@@ -25,7 +26,6 @@ import { CalendarEvent, getWorkOrderEvents } from 'src/slices/workOrder';
 import Actions from './Actions';
 import i18n from 'i18next';
 import PreventiveMaintenance from 'src/models/owns/preventiveMaintenance';
-import { usePrevious } from '../../../../hooks/usePrevious';
 import {
   getCalendarLocale,
   getDateLocale,
@@ -35,6 +35,10 @@ import {
 import { Locale as DateLocale } from 'date-fns';
 import enGb from '@fullcalendar/core/locales/en-gb';
 import { useTranslation } from 'react-i18next';
+import { FilterField } from 'src/models/owns/page';
+import { loadFilterFields, saveFilterFields } from 'src/utils/filter';
+import MoreFilters from '../Filters/MoreFilters';
+import _ from 'lodash';
 
 const FullCalendarWrapper = styled(Box)(
   ({ theme }) => `
@@ -136,35 +140,70 @@ interface OwnProps {
   handleAddWorkOrder: (date: Date) => void;
   handleOpenDetails: (id: number, type: string) => void;
   companyId: number | null;
+  eventsRefreshTrigger?: number;
 }
+
+const FILTERS_STORAGE_KEY = 'workOrder_filters';
+const DEFAULT_FILTER_FIELDS: FilterField[] = [
+  { field: 'archived', operation: 'eq', value: false },
+  {
+    field: 'priority',
+    operation: 'in',
+    values: ['NONE', 'LOW', 'MEDIUM', 'HIGH'],
+    value: '',
+    enumName: 'PRIORITY'
+  },
+  {
+    field: 'status',
+    operation: 'in',
+    values: ['OPEN', 'IN_PROGRESS', 'ON_HOLD'],
+    value: '',
+    enumName: 'STATUS'
+  }
+];
+
+const normalizeFields = (fields: FilterField[]) =>
+  [...fields]
+    .sort((a, b) => a.field.localeCompare(b.field))
+    .map((f) => ({ ...f, values: f.values ? [...f.values].sort() : f.values }));
+
+const getInitialFilterFields = (): FilterField[] =>
+  loadFilterFields(FILTERS_STORAGE_KEY, DEFAULT_FILTER_FIELDS);
 
 function ApplicationsCalendar({
   handleAddWorkOrder,
   handleOpenDetails,
-  companyId
+  companyId,
+  eventsRefreshTrigger = 0
 }: OwnProps) {
   const theme = useTheme();
   const { i18n } = useTranslation();
   const calendarRef = useRef<FullCalendar | null>(null);
-  const mobile = useMediaQuery(theme.breakpoints.down('md'));
   const dispatch = useDispatch();
   const { calendar, loadingGet } = useSelector((state) => state.workOrders);
   const [date, setDate] = useState<Date>(new Date());
   const [view, setView] = useState<View>('timeGridWeek');
+  const [visibleRange, setVisibleRange] = useState<{ start: Date; end: Date }>({
+    start: null,
+    end: null
+  });
+  const [filterFields, setFilterFields] = useState<FilterField[]>(
+    getInitialFilterFields()
+  );
+  const [openFilterDrawer, setOpenFilterDrawer] = useState<boolean>(false);
   const getLanguage = i18n.language;
   const [calendarLocale, setCalendarLocale] = useState<LocaleSingularArg>(enGb);
+
+  const onFilterChange = (newFilters: FilterField[]) => {
+    setFilterFields(newFilters);
+    saveFilterFields(FILTERS_STORAGE_KEY, newFilters, new Set());
+  };
+  const handleCloseFilterDrawer = () => setOpenFilterDrawer(false);
 
   useEffect(() => {
     getCalendarLocale(i18n.language).then(setCalendarLocale);
   }, [i18n.language]);
 
-  const viewsOrder: View[] = [
-    'dayGridMonth',
-    'timeGridWeek',
-    'listWeek',
-    'timeGridDay'
-  ];
-  const previousView = usePrevious(view);
   const getColor = (priority: Priority) => {
     switch (priority) {
       case 'HIGH':
@@ -182,13 +221,6 @@ function ApplicationsCalendar({
   const getEventFromWO = (
     eventPayload: CalendarEvent<WorkOrder | PreventiveMaintenance>
   ): Event => {
-    const end =
-      'status' in eventPayload.event
-        ? new Date(
-            new Date(eventPayload.date).getTime() +
-              (eventPayload.event.estimatedDuration || 1) * 60 * 60 * 1000
-          )
-        : new Date(eventPayload.date);
     return {
       id: eventPayload.event.id.toString(),
       allDay: false,
@@ -198,7 +230,7 @@ function ApplicationsCalendar({
           ? theme.colors.alpha.black[30]
           : getColor(eventPayload.event.priority),
       description: eventPayload.event?.description,
-      end,
+      end: new Date(eventPayload.endDate),
       start: new Date(eventPayload.date),
       title: eventPayload.event.title,
       extendedProps: { type: eventPayload.type }
@@ -215,20 +247,22 @@ function ApplicationsCalendar({
     }
   };
   useEffect(() => {
-    const calItem = calendarRef.current;
-    const newView = calItem.getApi().view;
-    if (
-      previousView &&
-      previousView !== view &&
-      viewsOrder.findIndex((v) => v === previousView) <
-        viewsOrder.findIndex((v) => v === view)
-    ) {
-      return;
-    }
-    const start = newView.activeStart;
-    const end = newView.activeEnd;
-    dispatch(getWorkOrderEvents(start, end, companyId));
-  }, [date, view, companyId]);
+    if (visibleRange.start && visibleRange.end)
+      dispatch(
+        getWorkOrderEvents(
+          visibleRange.start,
+          visibleRange.end,
+          companyId,
+          filterFields
+        )
+      );
+  }, [
+    visibleRange.start,
+    visibleRange.end,
+    companyId,
+    filterFields,
+    eventsRefreshTrigger
+  ]);
   const changeView = (changedView: View): void => {
     const calItem = calendarRef.current;
 
@@ -271,6 +305,13 @@ function ApplicationsCalendar({
         onToday={handleDateToday}
         changeView={changeView}
         view={view}
+        onFilterClick={() => setOpenFilterDrawer(true)}
+        hasActiveFilters={
+          !_.isEqual(
+            normalizeFields(filterFields),
+            normalizeFields(DEFAULT_FILTER_FIELDS)
+          )
+        }
       />
       <Divider />
       <FullCalendarWrapper>
@@ -294,6 +335,9 @@ function ApplicationsCalendar({
           }
           dateClick={(event) => handleAddWorkOrder(event.date)}
           dayMaxEventRows={4}
+          datesSet={(arg) =>
+            setVisibleRange({ start: arg.start, end: arg.end })
+          }
           events={calendar.events.map((eventPayload) =>
             getEventFromWO(eventPayload)
           )}
@@ -310,6 +354,25 @@ function ApplicationsCalendar({
           ]}
         />
       </FullCalendarWrapper>
+      <Drawer
+        anchor="left"
+        open={openFilterDrawer}
+        onClose={handleCloseFilterDrawer}
+        PaperProps={{
+          sx: { width: '30%' }
+        }}
+      >
+        <MoreFilters
+          filterFields={filterFields}
+          onFilterChange={onFilterChange}
+          onClose={handleCloseFilterDrawer}
+          onReset={() => {
+            onFilterChange(DEFAULT_FILTER_FIELDS);
+            handleCloseFilterDrawer();
+          }}
+          showEnumFilters
+        />
+      </Drawer>
     </Grid>
   );
 }

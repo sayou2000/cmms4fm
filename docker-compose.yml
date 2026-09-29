@@ -76,9 +76,9 @@ services:
       LICENSE_FINGERPRINT_REQUIRED: ${LICENSE_FINGERPRINT_REQUIRED:-false}
       LICENSE_FILE_PATH: ${LICENSE_FILE_PATH:-}
       ALLOWED_ORGANIZATION_ADMINS: ${ALLOWED_ORGANIZATION_ADMINS:-}
-      LOGO_PATHS: ${LOGO_PATHS}
-      CUSTOM_COLORS: ${CUSTOM_COLORS}
-      BRAND_CONFIG: ${BRAND_CONFIG}
+      LOGO_PATHS: ${LOGO_PATHS:-}
+      CUSTOM_COLORS: ${CUSTOM_COLORS:-}
+      BRAND_CONFIG: ${BRAND_CONFIG:-}
       PADDLE_API_KEY: ${PADDLE_API_KEY:-}
       PADDLE_WEBHOOK_SECRET_KEY: ${PADDLE_WEBHOOK_SECRET_KEY:-}
       PADDLE_ENVIRONMENT: ${PADDLE_ENVIRONMENT:-sandbox}
@@ -111,17 +111,17 @@ services:
       LDAP_MANAGER_PASSWORD: ${LDAP_MANAGER_PASSWORD:-}
       LDAP_USER_SEARCH_BASES: ${LDAP_USER_SEARCH_BASES:-}
       LDAP_USER_SEARCH_FILTER: ${LDAP_USER_SEARCH_FILTER:-}
-      LDAP_ATTR_EMAIL: ${LDAP_ATTR_EMAIL}
-      LDAP_ATTR_FIRSTNAME: ${LDAP_ATTR_FIRSTNAME}
-      LDAP_ATTR_LASTNAME: ${LDAP_ATTR_LASTNAME}
-      LDAP_ATTR_USERNAME: ${LDAP_ATTR_USERNAME}
+      LDAP_ATTR_EMAIL: ${LDAP_ATTR_EMAIL:-}
+      LDAP_ATTR_FIRSTNAME: ${LDAP_ATTR_FIRSTNAME:-}
+      LDAP_ATTR_LASTNAME: ${LDAP_ATTR_LASTNAME:-}
+      LDAP_ATTR_USERNAME: ${LDAP_ATTR_USERNAME:-}
       LDAP_OBJECT_CLASS: ${LDAP_OBJECT_CLASS:-}
       LDAP_OU_ROLE_MAPPINGS: ${LDAP_OU_ROLE_MAPPINGS:-}
       LDAP_SYNC_ENABLED: ${LDAP_SYNC_ENABLED:-false}
       LDAP_SYNC_CREATE: ${LDAP_SYNC_CREATE:-false}
       LDAP_SYNC_UPDATE: ${LDAP_SYNC_UPDATE:-false}
       LDAP_SYNC_DISABLE: ${LDAP_SYNC_DISABLE:-false}
-      LDAP_SYNC_CRON: ${LDAP_SYNC_CRON}
+      LDAP_SYNC_CRON: ${LDAP_SYNC_CRON:-}
     expose:
       - "8080"
     healthcheck:
@@ -162,6 +162,10 @@ services:
       PADDLE_ENVIRONMENT: ${PADDLE_ENVIRONMENT:-sandbox}
       RECAPTCHA_SITE_KEY: ${RECAPTCHA_SITE_KEY:- }
       LDAP_ENABLED: ${LDAP_ENABLED:-false}
+      SENTRY_DSN: ${SENTRY_DSN:- }
+      SENTRY_ENVIRONMENT: ${SENTRY_ENVIRONMENT:- }
+      SENTRY_RELEASE: ${SENTRY_RELEASE:- }
+      CLARITY_ID: ${CLARITY_ID:- }
     expose:
       - "3000"
     depends_on:
@@ -209,6 +213,9 @@ services:
     # through nginx at /mcp anyway.
 
   minio:
+    # Deliberately behind upstream, which moved to pgsty/silo running as root (33746fa4).
+    # This image sits on the uploaded files of a live instance; the switch is its own step,
+    # after a backup of the minio_data volume. See the divergence table in CLAUDE.md.
     image: minio/minio:RELEASE.2025-04-22T22-12-26Z
     container_name: atlas_minio
     environment:

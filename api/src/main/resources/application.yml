@@ -182,7 +182,7 @@ oauth2:
   client-id: ${OAUTH2_CLIENT_ID:}
   client-secret: ${OAUTH2_CLIENT_SECRET:}
 license-key: ${LICENSE_KEY:}
-license-fingerprint-required: ${LICENSE_FINGERPRINT_REQUIRED:true}
+license-fingerprint-required: ${LICENSE_FINGERPRINT_REQUIRED:false}
 license-file-path: ${LICENSE_FILE_PATH:}
 self-hosted:
   # Self-hosting unlock for a private/single-tenant instance. When true, the license
@@ -248,6 +248,12 @@ sendgrid:
     email: ${SENDGRID_FROM_EMAIL:}
 intercom:
   token: ${INTERCOM_TOKEN:}
+sentry:
+  dsn: ${SENTRY_DSN:}
+  environment: ${SENTRY_ENVIRONMENT:production}
+  release: ${SENTRY_RELEASE:}
+  traces-sample-rate: ${SENTRY_TRACES_SAMPLE_RATE:0.1}
+  send-default-pii: true
 springdoc:
   api-docs:
     version: openapi_3_1

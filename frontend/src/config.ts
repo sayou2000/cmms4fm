@@ -97,4 +97,15 @@ export const paddleEnvironment = getRuntimeValue('PADDLE_ENVIRONMENT') as
 export const recaptchaSiteKey = getRuntimeValue('RECAPTCHA_SITE_KEY');
 
 export const intercomId = getRuntimeValue('INTERCOM_ID');
+export const clarityId = getRuntimeValue('CLARITY_ID');
 export const ldapEnabled = getRuntimeValue('LDAP_ENABLED') === 'true';
+
+export const sentryDsn = getRuntimeValue('SENTRY_DSN');
+export const sentryEnvironment = getRuntimeValue(
+  'SENTRY_ENVIRONMENT',
+  'production'
+);
+export const sentryRelease = getRuntimeValue(
+  'SENTRY_RELEASE',
+  'atlas-frontend'
+);

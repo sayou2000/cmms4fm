@@ -42,14 +42,19 @@ public class CompanyAudit extends Audit {
         if (authentication == null || authentication.getPrincipal() instanceof String) return;
         Object principal = authentication.getPrincipal();
         User user = ((CustomUserDetail) principal).getUser();
-        Company company = user.getCompany();
+        Company userCompany = user.getCompany();
         // check if not authorized
         if (!user.getRole().getRoleType().equals(RoleType.ROLE_SUPER_ADMIN) &&
-                !company.getId().equals(this.getCompany().getId())
+                !skipPostLoadCheck(user) &&
+                !userCompany.getId().equals(this.getCompany().getId())
                 && !makesException(user)) {
             throw new CustomException("afterLoad:  the user (id=" + user.getId() + ")  is not authorized to load  " +
                     "this object (" + this.getClass() + ") with id " + this.id, HttpStatus.FORBIDDEN);
         }
+    }
+
+    protected boolean skipPostLoadCheck(User user) {
+        return false;
     }
 
     private boolean makesException(User user) {

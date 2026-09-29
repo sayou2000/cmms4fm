@@ -28,6 +28,10 @@ public class ApplicationInitializer implements SmartInitializingSingleton {
     private final RoleService roleService;
     private final CompanyService companyService;
     private final SubscriptionPlanService subscriptionPlanService;
+    private final ScheduleService scheduleService;
+
+    @Value("${cloud-version}")
+    private boolean cloudVersion;
 
     @Override
     public void afterSingletonsInstantiated() {
@@ -43,9 +47,10 @@ public class ApplicationInitializer implements SmartInitializingSingleton {
             log.info("Updating default roles...");
             roleService.updateDefaultRoles();
 
+            if (!cloudVersion) scheduleService.findActive().forEach(scheduleService::reScheduleWorkOrder);
+
             userService.checkUsageBasedLimit(0);
 
-            generalPreferencesRepository.updateTemporaryTimeZones(ZoneId.systemDefault().getId());
 
             log.info("Application initialization completed successfully");
         } catch (Exception e) {
