@@ -81,8 +81,9 @@ Image noch ziehbar ist.
 
 ## 6. Offen
 
-* **MCP-Fixture auffrischen:** `mcp/test/fixtures/api-docs.json` aus der laufenden
-  Instanz ziehen und `npm test` in `mcp/` fahren (Upstream hat Controller-Signaturen
-  geändert; siehe Tabelleneintrag „MCP server").
+* ~~MCP-Fixture auffrischen~~ — erledigt: Live-Dokument und Fixture haben dieselben 374
+  Operationen, sieben Schemas haben Felder gewonnen oder verloren (u. a. `VendorPatchDTO.companyName`,
+  `User.language`, `WorkOrderPatchDTO` ohne `completedBy`/`completedOn`). Fixture ersetzt, `npm test`
+  in `mcp/`: 70/70.
 * **Nächster Sync:** Drei Wochen Abstand brachten 105 Commits und zehn Konflikte,
   vier Tage im September einen. Das Intervall aus der `CLAUDE.md` ist die Obergrenze.
