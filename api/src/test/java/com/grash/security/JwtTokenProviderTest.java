@@ -328,4 +328,16 @@ class JwtTokenProviderTest {
             assertEquals("ROLE_CLIENT", authorities.iterator().next().getAuthority());
         }
     }
+
+    @Test
+    void getAuthentication_tokenOfADeletedUser_isUnauthorized() {
+        String username = "deleted@test.com";
+        String token = jwtTokenProvider.createToken(username, List.of(RoleType.ROLE_CLIENT));
+        when(customUserDetailsService.loadUserByUsername(username))
+                .thenThrow(new org.springframework.security.core.userdetails.UsernameNotFoundException("User not found"));
+
+        com.grash.exception.CustomException ex = assertThrows(com.grash.exception.CustomException.class,
+                () -> jwtTokenProvider.getAuthentication(token));
+        assertEquals(org.springframework.http.HttpStatus.UNAUTHORIZED, ex.getHttpStatus());
+    }
 }

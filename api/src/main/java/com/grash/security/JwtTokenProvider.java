@@ -18,6 +18,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.stereotype.Component;
 
 import javax.crypto.SecretKey;
@@ -66,7 +67,14 @@ public class JwtTokenProvider {
                 .verifyWith(key)
                 .build()
                 .parseSignedClaims(token).getPayload();
-        CustomUserDetail userDetails = customUserDetailsService.loadUserByUsername(claims.getSubject());
+        CustomUserDetail userDetails;
+        try {
+            userDetails = customUserDetailsService.loadUserByUsername(claims.getSubject());
+        } catch (UsernameNotFoundException e) {
+            // A correctly signed token whose user has since been deleted. JwtTokenFilter only
+            // turns CustomException into a response; anything else escapes it as a 500.
+            throw new CustomException("User not found", HttpStatus.UNAUTHORIZED);
+        }
         if (!userDetails.isEnabled()) {
             throw new CustomException("User account is disabled", HttpStatus.UNAUTHORIZED);
         }
