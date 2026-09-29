@@ -30,18 +30,13 @@ Nutzer, Super-Admin-Signup nur noch per Einladung, Sentry und Microsoft Clarity
 | `frontend/config-overrides.js` | Bleibt gelöscht (Vite). Sentry-Source-Maps nicht portiert, Sentry wird nicht genutzt. |
 | `frontend/package-lock.json` | Fork-Version, danach `npm install` nur für die zwei neuen Pakete (+114 Zeilen, keine bestehende Version verschoben). |
 
-## 3. Bewusste Abweichungen in sauber gemergten Dateien
+## 3. Bewusste Abweichung in einer sauber gemergten Datei
 
-* **`docker-compose.yml`: Storage-Image bleibt `minio/minio`.** Upstream stellt in
-  `33746fa4` auf `pgsty/silo` um und lässt es als root laufen. Das Image liegt unter
-  den hochgeladenen Dateien der laufenden Instanz — der Wechsel wird ein eigener
-  Schritt, nach einer Sicherung des Volumes `minio_data`.
 * **`frontend/package.json`: `@sentry/webpack-plugin` entfernt.** Nur für Webpack,
   der Build läuft über Vite. `@sentry/react` und `@microsoft/clarity` bleiben, weil
   `App.tsx` und `index.tsx` sie importieren.
 
-Beide stehen jetzt in der Divergenz-Tabelle der `CLAUDE.md`, ebenso die
-Multi-Parts-Auflösung; der Eintrag zu den Domain-Events nennt den neuen Ort
+In der Divergenz-Tabelle der `CLAUDE.md` steht jetzt die Multi-Parts-Auflösung; der Eintrag zu den Domain-Events nennt den neuen Ort
 des Alarms.
 
 ## 4. Geprüft, ohne Handlungsbedarf
@@ -71,9 +66,21 @@ des Alarms.
 * **Deploy-Pipeline vorab repariert:** Der Coolify-Trigger, der am 07.09. mit
   TLS-Timeout scheiterte, lief beim Rerun in 6 s durch.
 
+## 5a. Nachtrag: Storage-Image
+
+Der Merge hielt zunächst `minio/minio:RELEASE.2025-04-22T22-12-26Z` fest, um den Wechsel auf
+`pgsty/silo` separat mit Backup zu machen. **Das Deployment scheiterte daran:** MinIO hat das
+Repository auf Docker Hub entfernt (`pull access denied, repository does not exist`, die Hub-API
+antwortet 404). Genau das war Upstreams Grund für den Wechsel. Coolify zieht Images, bevor es den
+laufenden Stand stoppt, die alte Version lief also weiter.
+
+Jetzt übernommen: Upstreams Block unverändert (`pgsty/silo`, `user: "0:0"`). Ein Backup gab es
+nicht, auf ausdrücklichen Wunsch — die Instanz ist eine Testinstanz, die hochgeladenen Dateien
+sind verzichtbar. **Lehre:** ein Image-Pin gegen Upstream braucht vorher die Prüfung, dass das
+Image noch ziehbar ist.
+
 ## 6. Offen
 
-* **Storage-Umstieg auf `pgsty/silo`** — mit Volume-Backup, eigener Commit.
 * **MCP-Fixture auffrischen:** `mcp/test/fixtures/api-docs.json` aus der laufenden
   Instanz ziehen und `npm test` in `mcp/` fahren (Upstream hat Controller-Signaturen
   geändert; siehe Tabelleneintrag „MCP server").
