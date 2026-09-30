@@ -52,6 +52,14 @@ public class AsyncExportService {
      * client is already listening on. What differs is only where the rows come from and which
      * columns are written.
      * <p>
+     * The result goes out with {@code convertAndSendToUser}, never {@code convertAndSend}. The
+     * client subscribes to {@code /user/{email}/exports/{uuid}}, and only the user variant
+     * resolves to that; a plain {@code convertAndSend("/exports/" + uuid, …)} lands on a broker
+     * destination nobody holds a subscription on. Because {@code /exports} is an enabled simple
+     * broker prefix, such a message is accepted and dropped without a word — the export finishes,
+     * the file is written, and the client spins forever. Same for the error branch: the failure
+     * is just as invisible.
+     * <p>
      * A page size of 100 regardless of the criteria's own: see
      * {@link WorkOrderService#findForExport}.
      * <p>
@@ -82,11 +90,11 @@ public class AsyncExportService {
             MultipartFile file = new MultipartFileImpl(target.toByteArray(), "Work Orders.csv");
             String filePath = storageServiceFactory.getStorageService().uploadAndSign(file,
                     user.getCompany().getId() + "/exports/" + uuid + "/work-orders");
-            messagingTemplate.convertAndSend("/exports/" + uuid, filePath);
+            messagingTemplate.convertAndSendToUser(user.getEmail(), "/exports/" + uuid, filePath);
             log.info("Filtered export completed for work-orders, uuid: {}", uuid);
         } catch (Exception e) {
             log.error("Filtered export failed for work-orders, uuid: {}", uuid, e);
-            messagingTemplate.convertAndSend("/exports/" + uuid, "error: " + e.getMessage());
+            messagingTemplate.convertAndSendToUser(user.getEmail(), "/exports/" + uuid, "error: " + e.getMessage());
         }
     }
 
@@ -115,11 +123,11 @@ public class AsyncExportService {
             MultipartFile file = new MultipartFileImpl(target.toByteArray(), "Assets.csv");
             String filePath = storageServiceFactory.getStorageService().uploadAndSign(file,
                     user.getCompany().getId() + "/exports/" + uuid + "/assets");
-            messagingTemplate.convertAndSend("/exports/" + uuid, filePath);
+            messagingTemplate.convertAndSendToUser(user.getEmail(), "/exports/" + uuid, filePath);
             log.info("Filtered export completed for assets, uuid: {}", uuid);
         } catch (Exception e) {
             log.error("Filtered export failed for assets, uuid: {}", uuid, e);
-            messagingTemplate.convertAndSend("/exports/" + uuid, "error: " + e.getMessage());
+            messagingTemplate.convertAndSendToUser(user.getEmail(), "/exports/" + uuid, "error: " + e.getMessage());
         }
     }
 

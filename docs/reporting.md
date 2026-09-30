@@ -206,8 +206,19 @@ result set is likely empty.
 `{criteria, columns}`. Both fields optional; an empty body reproduces the old behaviour, which
 is why the `GET` variants still exist and still serve the "export everything" menu entries.
 
-The websocket handshake is unchanged: the client generates a uuid, subscribes to
-`/exports/<uuid>`, calls the endpoint, and receives a signed URL when the file lands in MinIO.
+The websocket handshake is unchanged: the client generates a uuid, subscribes, calls the
+endpoint, and receives a signed URL when the file lands in MinIO.
+
+**The destination is `/user/<email>/exports/<uuid>`, and the server reaches it only with
+`convertAndSendToUser(user.getEmail(), "/exports/" + uuid, …)`.** This paragraph said
+`/exports/<uuid>` until 2026-09-30 and the filtered exports were written against it, which broke
+them both: `convertAndSend("/exports/" + uuid, …)` publishes to a plain broker destination that
+nobody subscribes to. `/exports` is an enabled simple broker prefix
+([`WebSocketConfig`](../api/src/main/java/com/grash/configuration/WebSocketConfig.java)), so the
+broker accepted the message and dropped it without a word — the export ran to completion, the CSV
+was uploaded, and the menu item spun forever. The error branch had the same bug, so a genuine
+failure was equally silent. The eight unfiltered `GET` dumps were always correct; they are the
+reference to copy. `AsyncExportServiceTest` now pins the destination for both families.
 
 ### The column registry
 
