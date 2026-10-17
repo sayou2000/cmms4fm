@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import { buildUrl } from '../src/cmms/client.js';
-import { mapHttpStatus } from '../src/cmms/errors.js';
+import { explainInvalidSearch, mapHttpStatus } from '../src/cmms/errors.js';
 import type { Operation } from '../src/openapi/operations.js';
 
 function operation(overrides: Partial<Operation>): Operation {
@@ -115,4 +115,34 @@ test('a body sent to an endpoint that takes none is refused', () => {
     () => buildUrl('http://api:8080', operation({ path: '/assets/mini' }), { body: { a: 1 } }),
     /unknown argument\(s\) body/,
   );
+});
+
+test('an invalid search names the conditions sent and points at a wrong field', () => {
+  const failure = mapHttpStatus(400, '{"message":"Invalid search field"}');
+  const explained = explainInvalidSearch(failure, {
+    filterFields: [{ field: 'type', operation: 'cn', value: 'pump' }],
+  });
+  assert.equal(explained.kind, 'invalid_input');
+  assert.equal(explained.retryable, false);
+  assert.match(explained.advice, /type cn/);
+  assert.match(explained.advice, /field name is wrong/);
+});
+
+test('an invalid search with an unknown operation names the operation, alternatives included', () => {
+  const failure = mapHttpStatus(400, '{"message":"Invalid search field"}');
+  const explained = explainInvalidSearch(failure, {
+    filterFields: [
+      { field: 'name', operation: 'cn', value: 'a', alternatives: [{ field: 'name', operation: 'like', value: 'b' }] },
+    ],
+  });
+  assert.match(explained.advice, /"like" is not an operation/);
+  assert.match(explained.advice, /cn, nc, eq/);
+});
+
+test('other failures and bodies without conditions keep the generic advice', () => {
+  const other = mapHttpStatus(400, '{"message":"bad"}');
+  assert.equal(explainInvalidSearch(other, { filterFields: [{ field: 'x', operation: 'cn' }] }), other);
+  const search = mapHttpStatus(400, '{"message":"Invalid search field"}');
+  assert.equal(explainInvalidSearch(search, undefined), search);
+  assert.equal(explainInvalidSearch(search, {}), search);
 });

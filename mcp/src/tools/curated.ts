@@ -15,6 +15,15 @@
  * encode business rules — that is the CMMS's job (konzept §1, non-goal "no business logic").
  */
 
+/**
+ * Where an asset is, in this data model, is a chain rather than a field: a child asset often
+ * carries no location of its own because it sits inside a parent that does, and locations nest
+ * in turn. A real agent asked "which building are the pumps in" read an empty `location` off a
+ * child pump and answered that it was in no building at all.
+ */
+const LOCATION_CHAIN =
+  "An empty `location` does not mean the asset is nowhere: a child asset usually inherits its place from `parentAsset`, so follow `parentAsset` up with get_asset until one has a location, then follow that location's `parentLocation` up with get_location to reach the building.";
+
 export interface CuratedTool {
   name: string;
   description: string;
@@ -28,21 +37,25 @@ export const CURATED_TOOLS: Record<string, CuratedTool> = {
       'Find assets (equipment, plant, technical installations) in this organisation.',
       'Every field of the body is optional: `{}` lists the first page with the server defaults. Send only what you want to change — inventing a value for a field you do not need is the usual way this call fails.',
       'Filters go in `body.filterFields`, one entry per condition, and every entry is combined with AND — there is no top-level OR, only `alternatives` inside a single condition.',
-      'A condition is `{field, operation, value}`; common operations are `eq`, `ne`, `cn` (contains), `gt`, `lt`, `in`. Omit `filterFields` entirely rather than sending a placeholder condition.',
+      'A condition is `{field, operation, value}`. Operations: `cn` contains, `nc` does not contain, `bw`/`ew` begins/ends with, `bn`/`en` their negations, `eq`, `ne`, `gt`, `ge`, `lt`, `le`, `nu` is empty, `nn` is not empty (no value needed), `in` one of a list. Anything else is rejected as "Invalid search field". Omit `filterFields` entirely rather than sending a placeholder condition.',
+      'Text operations ignore case and accents, so `{field: "name", operation: "cn", value: "pumpe"}` also finds "Umwälzpumpe".',
+      'Searchable fields: `name`, `customId`, `description`, `serialNumber`, `model`, `manufacturer`, `barCode`, `area`, and dotted paths into relations: `category.name`, `location.name`, `parentAsset.name`. `eq` on `location` or `parentAsset` compares the id; `nu` on `parentAsset` finds top-level assets.',
+      'To find a kind of equipment, search `name` and `category.name` in separate calls — a pump may be named after its function and only categorised as a pump. Each result carries `location` and `parentAsset` as objects with id and name.',
       'Page with `body.pageNum` (0-based) and `body.pageSize` (at least 1); sort with `body.sortField` and `body.direction`.',
       'Enum-valued fields need `enumName` set, and only PRIORITY, STATUS and JS_DATE are supported there — other enum fields are stored as numbers, so a string comparison against them silently matches nothing.',
       'The organisation filter is added by the CMMS; do not send a company condition.',
+      LOCATION_CHAIN,
     ].join(' '),
   },
   'GET /assets/{id}': {
     name: 'get_asset',
     description:
-      'Read one asset in full: name, description, location, category, status, custom fields, parent and warranty data. Use search_assets first if you only have a name or a barcode.',
+      `Read one asset in full: name, description, location, category, status, custom fields, parent and warranty data. Use search_assets first if you only have a name or a barcode. ${LOCATION_CHAIN}`,
   },
   'GET /assets/mini': {
     name: 'list_assets_mini',
     description:
-      'List every asset in the organisation as id plus name only. Cheap way to resolve a name to an id before calling get_asset; returns the whole list, unpaginated.',
+      'List every asset in the organisation as id, name, customId, parentId and locationId. Cheap way to resolve a name to an id before calling get_asset; returns the whole list, unpaginated. It carries no category, so it cannot answer "which assets are pumps" on its own — use search_assets for that.',
   },
   'GET /assets/children/{id}': {
     name: 'get_asset_children',
@@ -51,7 +64,8 @@ export const CURATED_TOOLS: Record<string, CuratedTool> = {
   },
   'GET /assets/location/{id}': {
     name: 'get_assets_at_location',
-    description: 'List the assets placed at one location.',
+    description:
+      'List the assets placed directly at one location. Child assets that take their place from a parent asset, and assets at nested locations below this one, are not included.',
   },
   'GET /assets/barcode': {
     name: 'find_asset_by_barcode',
@@ -61,7 +75,8 @@ export const CURATED_TOOLS: Record<string, CuratedTool> = {
   'POST /work-orders/search': {
     name: 'search_work_orders',
     description: [
-      'Find work orders (maintenance jobs). Same filter shape as search_assets: `body.filterFields` conditions combined with AND, `pageNum`/`pageSize` for paging, `sortField`/`direction` for order.',
+      'Find work orders (maintenance jobs). Same filter shape and operations as search_assets: `body.filterFields` conditions combined with AND, `pageNum`/`pageSize` for paging, `sortField`/`direction` for order.',
+      'Searchable fields: `title`, `description`, `customId`, `dueDate`, `archived`, `asset.name`, `location.name`, `category.name`; `eq` on `asset` or `location` compares the id.',
       'Every field is optional — `{}` lists the first page. Do not fill fields you do not need.',
       'Filtering on priority or status needs `enumName` set to PRIORITY or STATUS respectively, because those columns hold enum ordinals rather than text.',
     ].join(' '),
@@ -93,7 +108,7 @@ export const CURATED_TOOLS: Record<string, CuratedTool> = {
   'POST /locations/search': {
     name: 'search_locations',
     description:
-      'Find locations (sites, buildings, floors, rooms). Locations nest; the same filter shape as search_assets applies. Every field of the body is optional; `{}` lists the first page.',
+      'Find locations (sites, buildings, floors, rooms). Same filter shape and operations as search_assets. Every field of the body is optional; `{}` lists the first page. Searchable fields: `name`, `customId`, `address`, `parentLocation.name`; `eq` on `parentLocation` compares the id and `nu` on it finds top-level locations. Locations nest (room in floor in building): to name the building of a room, follow `parentLocation` up with get_location until it is empty.',
   },
   'GET /locations/{id}': {
     name: 'get_location',
@@ -107,7 +122,7 @@ export const CURATED_TOOLS: Record<string, CuratedTool> = {
   'POST /meters/search': {
     name: 'search_meters',
     description:
-      'Find meters (counters attached to assets: operating hours, kWh, cubic metres). Same filter shape as search_assets. Every field of the body is optional; `{}` lists the first page.',
+      'Find meters (counters attached to assets: operating hours, kWh, cubic metres). Same filter shape and operations as search_assets. Every field of the body is optional; `{}` lists the first page. Searchable fields: `name`, `unit`, `asset.name`, `location.name`, `meterCategory.name`.',
   },
   'GET /meters/{id}': {
     name: 'get_meter',
@@ -130,7 +145,7 @@ export const CURATED_TOOLS: Record<string, CuratedTool> = {
   'POST /parts/search': {
     name: 'search_parts',
     description:
-      'Find spare parts and stock items. Same filter shape as search_assets; quantity and cost fields are numeric. Every field of the body is optional; `{}` lists the first page. `quantity` is the stock level — the part lines on work orders are a different entity, see update_part_line.',
+      'Find spare parts and stock items. Same filter shape and operations as search_assets; searchable fields are `name`, `barcode`, `description`, `area`, `category.name`, and the numbers `quantity`, `minQuantity`, `cost`. Every field of the body is optional; `{}` lists the first page. `quantity` is the stock level — the part lines on work orders are a different entity, see update_part_line.',
   },
   'GET /parts/{id}': {
     name: 'get_part',

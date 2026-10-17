@@ -125,3 +125,59 @@ function extractMessage(body: string): string | undefined {
   }
   return trimmed.slice(0, 500);
 }
+
+/** The operations `SearchOperation.getSimpleOperation` accepts; anything else is rejected. */
+const SEARCH_OPERATIONS = ['cn', 'nc', 'eq', 'ne', 'bw', 'bn', 'ew', 'en', 'nu', 'nn', 'gt', 'ge', 'lt', 'le', 'in', 'inm'];
+
+/**
+ * Turns the CMMS's bare "Invalid search field" into advice an agent can act on.
+ *
+ * The CMMS names no field on purpose (InvalidSearchFieldException keeps it out of the response
+ * so the data model is not disclosed), and the generic "correct the arguments" left a real agent
+ * guessing field names call after call. This server already holds the request it sent, so it
+ * can repeat the conditions back, point at any operation that cannot be valid, and send the
+ * agent to the tool description for field names - without telling the caller anything it did
+ * not write itself.
+ */
+export function explainInvalidSearch(failure: Failure, requestBody: unknown): Failure {
+  if (failure.kind !== 'invalid_input' || !/invalid search field/i.test(failure.message)) return failure;
+  const conditions = collectConditions(requestBody);
+  if (conditions.length === 0) return failure;
+
+  const sent = conditions.map((c) => `${String(c.field)} ${String(c.operation)}`).join(', ');
+  const badOperations = conditions.filter(
+    (c) => typeof c.operation !== 'string' || !SEARCH_OPERATIONS.includes(c.operation),
+  );
+  const parts = [`The conditions sent were: ${sent}.`];
+  if (badOperations.length > 0) {
+    parts.push(
+      `${badOperations.map((c) => `"${String(c.operation)}"`).join(', ')} is not an operation; use one of ${SEARCH_OPERATIONS.join(', ')}.`,
+    );
+  } else {
+    parts.push(
+      "Every operation is valid, so a field name is wrong: use only the searchable fields listed in this tool's description, with dotted paths for relations (e.g. `category.name`, `location.name`), and drop the condition you are unsure of rather than guessing another name.",
+    );
+  }
+  return { ...failure, advice: parts.join(' ') };
+}
+
+interface Condition {
+  field?: unknown;
+  operation?: unknown;
+}
+
+function collectConditions(body: unknown): Condition[] {
+  if (!body || typeof body !== 'object') return [];
+  const filterFields = (body as { filterFields?: unknown }).filterFields;
+  if (!Array.isArray(filterFields)) return [];
+  const result: Condition[] = [];
+  for (const entry of filterFields) {
+    if (!entry || typeof entry !== 'object') continue;
+    result.push(entry as Condition);
+    const alternatives = (entry as { alternatives?: unknown }).alternatives;
+    if (Array.isArray(alternatives)) {
+      for (const alt of alternatives) if (alt && typeof alt === 'object') result.push(alt as Condition);
+    }
+  }
+  return result;
+}

@@ -1,6 +1,6 @@
 import type { Config } from '../config.js';
 import type { Operation } from '../openapi/operations.js';
-import { failure, mapHttpStatus, type Failure } from './errors.js';
+import { explainInvalidSearch, failure, mapHttpStatus, type Failure } from './errors.js';
 
 /**
  * The whole proxy, in one function: take the tool arguments, put them where the HTTP
@@ -95,7 +95,7 @@ export async function callOperation(
       ok: false,
       status: response.status,
       body: text,
-      failure: mapHttpStatus(response.status, text),
+      failure: explainInvalidSearch(mapHttpStatus(response.status, text), hasBody ? body : undefined),
       truncated: false,
       durationMs,
     };
