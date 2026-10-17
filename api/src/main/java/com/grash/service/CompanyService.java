@@ -6,12 +6,13 @@ import com.grash.mapper.CompanyMapper;
 import com.grash.model.Company;
 import com.grash.repository.CompanyRepository;
 import com.grash.utils.Sanitizer;
+import jakarta.persistence.EntityManager;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-
-import jakarta.persistence.EntityManager;
 
 import java.util.Collection;
 import java.util.Optional;
@@ -22,7 +23,13 @@ public class CompanyService {
     private final CompanyRepository companyRepository;
     private final CompanyMapper companyMapper;
     private final EntityManager em;
-//    private final RoleService roleService;
+    private PaddleService paddleService;
+    
+    @Autowired
+    public void setDeps(@Lazy PaddleService paddleService
+    ) {
+        this.paddleService = paddleService;
+    }
 
     public Company create(Company company) {
 //        company.getCompanySettings().setRoleList(roleService.findDefaultRoles());
@@ -39,6 +46,10 @@ public class CompanyService {
     }
 
     public void delete(Long id) {
+        Company company = companyRepository.findById(id).orElseThrow(() -> new CustomException("Company not found",
+                HttpStatus.NOT_FOUND));
+        if (company.getSubscription().getPaddleSubscriptionId() != null)
+            paddleService.pauseSubscription(company.getSubscription().getPaddleSubscriptionId());
         companyRepository.deleteById(id);
     }
 
