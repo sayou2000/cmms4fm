@@ -466,7 +466,9 @@ fork (2026-08-02) and the first sync (2026-08-26) it produced 264 of them. This 
 a backlog that sits still, so the interval is the whole game — the work per sync grows faster
 than the time between them, because changes start landing on top of each other.
 
-**Sync monthly, or before starting anything larger.** The routine, cheapest first:
+**Sync monthly, or before starting anything larger.** The whole routine — analysis, standing conflict
+resolutions, local checks, deploy watch, aftercare — is the `upstream-sync` skill in
+`.claude/skills/upstream-sync/`; its scripts are runnable by hand too. In short, cheapest first:
 
 1. **Try GitHub's "Sync fork" button** on the repository page. It only handles the trivial
    case and refuses when there are conflicts — but when it works there is nothing else to do.
