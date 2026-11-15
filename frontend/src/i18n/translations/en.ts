@@ -2098,7 +2098,11 @@ const locale = {
   automation_subject_part_quantity: 'Stock level',
   automation_subject_part_minQuantity: 'Minimum stock',
   automation_subject_part_cost: 'Part cost',
-  automation_subject_part_name: 'Part name'
+  automation_subject_part_name: 'Part name',
+  build_info_label: 'Build',
+  build_info_local: 'Local build',
+  build_info_mismatch:
+    'Frontend ({{frontend}}) and server ({{server}}) run different builds – the last deploy has not fully gone through.'
 };
 
 export default locale;

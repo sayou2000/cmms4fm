@@ -31,6 +31,16 @@ RUN apk add --no-cache nodejs npm \
 COPY docker-entrypoint.sh /docker-entrypoint.sh
 RUN chmod +x /docker-entrypoint.sh
 
+# Build stamp for the sidebar, set by CI (deploy.yml). A static file rather than a
+# VITE_ variable: declared this late, a new commit only invalidates this one layer,
+# not the npm install and the bundle above. Empty when built by hand, which the
+# sidebar shows as a local build.
+ARG GIT_SHA=""
+ARG GIT_COMMIT_TIME=""
+ARG GIT_REPO=""
+RUN printf '{"sha":"%s","time":"%s","repo":"%s"}\n' "$GIT_SHA" "$GIT_COMMIT_TIME" "$GIT_REPO" \
+    > /usr/share/nginx/html/build-info.json
+
 WORKDIR /usr/share/nginx/html
 EXPOSE 3000
 

@@ -14,6 +14,7 @@ import {
 } from '@mui/material';
 import SidebarMenu from './SidebarMenu';
 import SidebarFooter from './SidebarFooter';
+import BuildInfo, { BUILD_INFO_HEIGHT } from './BuildInfo';
 import Logo from 'src/components/LogoSign';
 import { isCloudVersion } from '../../../config';
 import useAuth from '../../../hooks/useAuth';
@@ -30,7 +31,7 @@ const SidebarWrapper = styled(Box)(
         position: relative;
         z-index: 7;
         height: 100%;
-        padding-bottom: 61px;
+        padding-bottom: ${61 + BUILD_INFO_HEIGHT}px;
 `
 );
 
@@ -83,6 +84,7 @@ function Sidebar() {
           }}
         />
         <SidebarFooter />
+        <BuildInfo />
       </SidebarWrapper>
       <Drawer
         sx={{
@@ -123,6 +125,7 @@ function Sidebar() {
             <SidebarMenu />
           </Scrollbar>
           <SidebarFooter />
+          <BuildInfo />
         </SidebarWrapper>
       </Drawer>
     </>

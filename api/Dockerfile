@@ -17,6 +17,12 @@ ENV SENTRY_RELEASE=$SENTRY_RELEASE
 # Copy the compiled Spring Boot application JAR file into the container at /app
 COPY --from=build /app/target/*.jar my-spring-boot-app.jar
 
+# Build stamp, set by CI (deploy.yml) and read by BuildInfoController. Baked into the
+# image, so unlike runtime switches it needs no entry in docker-compose.yml.
+ARG GIT_SHA=""
+ARG GIT_COMMIT_TIME=""
+ENV GIT_SHA=$GIT_SHA GIT_COMMIT_TIME=$GIT_COMMIT_TIME
+
 # Expose the port that the Spring Boot application will run on
 EXPOSE 8080
 

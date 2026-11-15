@@ -2233,7 +2233,11 @@ const deJSON = {
   automation_subject_part_quantity: 'Bestand',
   automation_subject_part_minQuantity: 'Mindestbestand',
   automation_subject_part_cost: 'Teilekosten',
-  automation_subject_part_name: 'Teilebezeichnung'
+  automation_subject_part_name: 'Teilebezeichnung',
+  build_info_label: 'Stand',
+  build_info_local: 'Lokaler Build',
+  build_info_mismatch:
+    'Frontend ({{frontend}}) und Server ({{server}}) laufen auf unterschiedlichen Ständen – der letzte Deploy ist nicht vollständig durch.'
 };
 
 export default deJSON;

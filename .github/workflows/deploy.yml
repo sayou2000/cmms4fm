@@ -62,6 +62,13 @@ jobs:
         id: img
         run: echo "ref=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/${{ matrix.image }}" >> "$GITHUB_OUTPUT"
 
+      # The build stamp the sidebar shows ("Stand <date> · <sha>"). Commit time, not build
+      # time: it says which code is running, and stays the same when a build is re-run.
+      # Only api and frontend declare these ARGs; the other images ignore them.
+      - name: Resolve build stamp
+        id: stamp
+        run: echo "time=$(git log -1 --format=%cI)" >> "$GITHUB_OUTPUT"
+
       - name: Build and push ${{ matrix.name }}
         uses: docker/build-push-action@v6
         with:
@@ -72,6 +79,10 @@ jobs:
           tags: |
             ${{ steps.img.outputs.ref }}:latest
             ${{ steps.img.outputs.ref }}:sha-${{ github.sha }}
+          build-args: |
+            GIT_SHA=${{ github.sha }}
+            GIT_COMMIT_TIME=${{ steps.stamp.outputs.time }}
+            GIT_REPO=${{ github.repository }}
           cache-from: type=gha,scope=${{ matrix.name }}
           cache-to: type=gha,mode=max,scope=${{ matrix.name }}
 
