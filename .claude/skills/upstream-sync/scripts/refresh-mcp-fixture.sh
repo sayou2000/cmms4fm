@@ -29,13 +29,18 @@ L, F = ops(live), ops(fix)
 print(f"operations: fixture {len(F)}, live {len(L)}")
 for label, items in (("new", L - F), ("gone", F - L)):
     if items: print(f"  {label}: " + ", ".join(f"{m} {p}" for m, p in sorted(items)[:30]))
+# Same operation set is not the same operations: a changed response type (2026-11-15, PM tasks
+# Task -> TaskShowDTO) only shows up here, never in the schema list below.
+body = lambda d, m, p: json.dumps(d['paths'][p][m.lower()], sort_keys=True)
+altered = sorted((m, p) for m, p in L & F if body(live, m, p) != body(fix, m, p))
+if altered: print(f"  changed: " + ", ".join(f"{m} {p}" for m, p in altered[:30]))
 ls, fs = live['components']['schemas'], fix['components']['schemas']
 changed = [k for k in ls if json.dumps(ls[k], sort_keys=True) != json.dumps(fs.get(k), sort_keys=True)]
 print(f"schemas changed or new: {len(changed)}")
 for k in changed[:15]:
     lp, fp = set(ls[k].get('properties', {})), set(fs.get(k, {}).get('properties', {}))
     print(f"  {k}: +{sorted(lp - fp)} -{sorted(fp - lp)}")
-if not changed and L == F:
+if not changed and not altered and L == F:
     print("fixture is current - nothing to do"); sys.exit(3)
 # Same format as before: minified, trailing newline.
 open(sys.argv[2], 'w', encoding='utf-8', newline='\n').write(json.dumps(live, ensure_ascii=False, separators=(',', ':')) + '\n')
