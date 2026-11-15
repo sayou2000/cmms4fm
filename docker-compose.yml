@@ -59,6 +59,12 @@ services:
       SMTP_HOST: ${SMTP_HOST}
       SMTP_PORT: ${SMTP_PORT}
       SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE}
+      # Performance experiment (2026-11-15): one person uses this instance, so most code
+      # paths are called too rarely for the JIT to reach its optimising tier, and every
+      # deploy resets what it had. Measured: the same trivial request fell from ~46 ms to
+      # ~18 ms server time over 70 repetitions. C1-only compiles sooner and does not
+      # compete for the two cores with C2. Override or clear via JAVA_OPTS in Coolify.
+      JAVA_OPTS: ${JAVA_OPTS:--XX:TieredStopAtLevel=1}
       JWT_SECRET_KEY: ${JWT_SECRET_KEY}
       MINIO_ENDPOINT: http://minio:9000
       MINIO_BUCKET: atlas-bucket
