@@ -135,7 +135,9 @@ export default function CommentItem({
 
     while ((match = mentionRegex.exec(content)) !== null) {
       if (match.index > lastIndex) {
-        parts.push(<Text key={key++}>{content.slice(lastIndex, match.index)}</Text>);
+        parts.push(
+          <Text key={key++}>{content.slice(lastIndex, match.index)}</Text>
+        );
       }
       const [, displayName, userId] = match;
       parts.push(
@@ -202,7 +204,10 @@ export default function CommentItem({
                   navigation.navigate('UserDetails', { id: comment.user?.id })
                 }
               >
-                <Text style={{ fontWeight: 'bold' }} numberOfLines={1}>
+                <Text
+                  style={{ fontWeight: 'bold', color: 'black' }}
+                  numberOfLines={1}
+                >
                   {`${comment.user?.firstName || ''} ${
                     comment.user?.lastName || ''
                   }`}
@@ -271,7 +276,8 @@ export default function CommentItem({
                     style={{
                       borderWidth: 1,
                       borderColor: '#ccc',
-                      borderRadius: 4
+                      borderRadius: 4,
+                      color: 'black'
                     }}
                     {...textInputProps}
                   />
@@ -303,9 +309,7 @@ export default function CommentItem({
             <Text
               style={{
                 marginTop: 4,
-                color: comment.system
-                  ? theme.colors.onSurfaceVariant
-                  : undefined
+                color: comment.system ? theme.colors.onSurfaceVariant : 'black'
               }}
             >
               {renderContentWithMentions(comment.content)}

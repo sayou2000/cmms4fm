@@ -1279,7 +1279,8 @@ export default function WODetailsScreen({
                                   }, 100);
                                 }}
                                 placeholder={t('add_comment_placeholder')}
-                                style={{ flex: 1 }}
+                                placeholderTextColor="black"
+                                style={{ flex: 1, color: 'black' }}
                                 {...textInputProps}
                               />
                             </View>
