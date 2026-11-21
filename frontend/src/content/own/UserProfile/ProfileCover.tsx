@@ -107,7 +107,11 @@ const ProfileCover: FC<ProfileCoverProps> = ({ user }) => {
             type="file"
           />
           <label htmlFor="icon-button-file">
-            <IconButton component="span" color="primary">
+            <IconButton
+              aria-label={t('upload_image')}
+              component="span"
+              color="primary"
+            >
               {changingPicture ? (
                 <CircularProgress size="1rem" sx={{ color: 'white' }} />
               ) : (

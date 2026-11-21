@@ -450,6 +450,8 @@ function Assets() {
 
         return (
           <IconButton
+            aria-label={t(isExpanded ? 'collapse' : 'expand')}
+            aria-expanded={isExpanded}
             size="small"
             onClick={(e) => {
               e.stopPropagation();
@@ -1182,10 +1184,18 @@ function Assets() {
                 getLayout={tableState.getLayout}
                 onApply={handleApplySavedView}
               />
-              <IconButton onClick={() => handleReset(true)} color="primary">
+              <IconButton
+                aria-label={t('reset')}
+                onClick={() => handleReset(true)}
+                color="primary"
+              >
                 <ReplayTwoToneIcon />
               </IconButton>
-              <IconButton onClick={handleOpenMenu} color="primary">
+              <IconButton
+                aria-label={t('actions')}
+                onClick={handleOpenMenu}
+                color="primary"
+              >
                 <MoreVertTwoToneIcon />
               </IconButton>
               {view === 'list' && (

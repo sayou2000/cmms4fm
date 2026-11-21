@@ -182,10 +182,16 @@ const DraggableListItem = ({
                   ))}
                 </Select>
                 <Box>
-                  <IconButton onClick={() => onRemove(task.id)}>
+                  <IconButton
+                    aria-label={t('delete')}
+                    onClick={() => onRemove(task.id)}
+                  >
                     <DoDisturbOnTwoToneIcon color="error" />
                   </IconButton>
-                  <IconButton onClick={handleOpenMenu}>
+                  <IconButton
+                    aria-label={t('actions')}
+                    onClick={handleOpenMenu}
+                  >
                     <MoreVertTwoToneIcon />
                   </IconButton>
                 </Box>
@@ -296,6 +302,7 @@ const DraggableListItem = ({
                           />
                           {choices.length > 2 && (
                             <IconButton
+                              aria-label={t('delete')}
                               sx={{ ml: 2 }}
                               onClick={() => handleRemoveOption(index)}
                             >

@@ -233,6 +233,7 @@ function ApiKeys() {
               </IconButton>
             )}
             <IconButton
+              aria-label={t('delete')}
               color="error"
               onClick={() => handleOpenDeleteDialog(apiKey)}
             >
@@ -297,7 +298,10 @@ function ApiKeys() {
             <Typography variant="h4">
               {createdApiKeyCode ? t('api_key_code') : t('create_api_key')}
             </Typography>
-            <IconButton onClick={handleCloseCreateModal}>
+            <IconButton
+              aria-label={t('close')}
+              onClick={handleCloseCreateModal}
+            >
               <CloseIcon />
             </IconButton>
           </Box>
@@ -403,6 +407,7 @@ function ApiKeys() {
                   {createdApiKeyCode}
                 </Typography>
                 <IconButton
+                  aria-label={t('copy')}
                   onClick={() => copyToClipboard(createdApiKeyCode)}
                   color="primary"
                 >
@@ -462,7 +467,10 @@ function ApiKeys() {
             <Typography variant="h4">
               {showRotatedCode ? t('api_key_code') : t('rotate_api_key')}
             </Typography>
-            <IconButton onClick={handleCloseRotateDialog}>
+            <IconButton
+              aria-label={t('close')}
+              onClick={handleCloseRotateDialog}
+            >
               <CloseIcon />
             </IconButton>
           </Box>
@@ -516,6 +524,7 @@ function ApiKeys() {
                   {rotatedApiKeyCode}
                 </Typography>
                 <IconButton
+                  aria-label={t('copy')}
                   onClick={() => copyToClipboard(rotatedApiKeyCode)}
                   color="primary"
                 >

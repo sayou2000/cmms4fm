@@ -638,6 +638,7 @@ function CustomDatagrid2<TData extends RowData>({
                           )}
                         </Box>
                         <IconButton
+                          aria-label={t('menu')}
                           className="more-vert-icon"
                           size="small"
                           onClick={(e) => {

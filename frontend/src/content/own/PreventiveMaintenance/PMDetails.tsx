@@ -186,7 +186,11 @@ export default function PMDetails({
         <Box>
           {(hasCreatePermission(PermissionEntity.PREVENTIVE_MAINTENANCES) ||
             hasCreatePermission(PermissionEntity.WORK_ORDERS)) && (
-            <IconButton style={{ marginRight: 10 }} onClick={handleOpenMenu}>
+            <IconButton
+              aria-label={t('actions')}
+              style={{ marginRight: 10 }}
+              onClick={handleOpenMenu}
+            >
               <MoreVertTwoToneIcon />
             </IconButton>
           )}
@@ -194,7 +198,11 @@ export default function PMDetails({
             PermissionEntity.PREVENTIVE_MAINTENANCES,
             preventiveMaintenance
           ) && (
-            <IconButton style={{ marginRight: 10 }} onClick={handleOpenUpdate}>
+            <IconButton
+              aria-label={t('edit')}
+              style={{ marginRight: 10 }}
+              onClick={handleOpenUpdate}
+            >
               <EditTwoToneIcon color="primary" />
             </IconButton>
           )}
@@ -202,7 +210,7 @@ export default function PMDetails({
             PermissionEntity.PREVENTIVE_MAINTENANCES,
             preventiveMaintenance
           ) && (
-            <IconButton onClick={handleOpenDelete}>
+            <IconButton aria-label={t('delete')} onClick={handleOpenDelete}>
               <DeleteTwoToneIcon color="error" />
             </IconButton>
           )}
@@ -315,6 +323,7 @@ export default function PMDetails({
                   >
                     <img
                       src={preventiveMaintenance.image.url}
+                      alt={preventiveMaintenance.name}
                       style={{
                         borderRadius: 5,
                         height: 250,

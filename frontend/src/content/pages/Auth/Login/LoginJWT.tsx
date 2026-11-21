@@ -115,7 +115,12 @@ const LoginJWT: FC = () => {
             InputProps={{
               endAdornment: (
                 <InputAdornment position="end">
-                  <IconButton onClick={() => setShowPassword(!showPassword)}>
+                  <IconButton
+                    aria-label={t(
+                      showPassword ? 'hide_password' : 'show_password'
+                    )}
+                    onClick={() => setShowPassword(!showPassword)}
+                  >
                     <VisibilityIcon />
                   </IconButton>
                 </InputAdornment>

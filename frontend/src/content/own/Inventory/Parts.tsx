@@ -831,7 +831,11 @@ const Parts = ({ setAction }: PropsType) => {
           ))}
         </Tabs>
         <SearchInput onChange={debouncedQueryChange} />
-        <IconButton onClick={handleOpenMenu} color="primary">
+        <IconButton
+          aria-label={t('actions')}
+          onClick={handleOpenMenu}
+          color="primary"
+        >
           <MoreVertTwoToneIcon />
         </IconButton>
       </Stack>

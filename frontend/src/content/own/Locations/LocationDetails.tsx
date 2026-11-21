@@ -213,12 +213,17 @@ export default function LocationDetails(props: LocationDetailsProps) {
         </Box>
         <Box>
           {hasEditPermission(PermissionEntity.LOCATIONS, location) && (
-            <IconButton onClick={handleOpenUpdate} style={{ marginRight: 10 }}>
+            <IconButton
+              aria-label={t('edit')}
+              onClick={handleOpenUpdate}
+              style={{ marginRight: 10 }}
+            >
               <EditTwoToneIcon color="primary" />
             </IconButton>
           )}
           {hasCreatePermission(PermissionEntity.LOCATIONS) && (
             <IconButton
+              aria-label={t('copy')}
               style={{ marginRight: 10 }}
               onClick={() => onCopy(location)}
             >
@@ -226,7 +231,7 @@ export default function LocationDetails(props: LocationDetailsProps) {
             </IconButton>
           )}
           {hasDeletePermission(PermissionEntity.LOCATIONS, location) && (
-            <IconButton onClick={handleOpenDelete}>
+            <IconButton aria-label={t('delete')} onClick={handleOpenDelete}>
               <DeleteTwoToneIcon color="error" />
             </IconButton>
           )}
@@ -244,6 +249,7 @@ export default function LocationDetails(props: LocationDetailsProps) {
         >
           <img
             src={location.image.url}
+            alt={location.name}
             style={{ borderRadius: 5, height: 200 }}
           />
         </Grid>
@@ -409,6 +415,7 @@ export default function LocationDetails(props: LocationDetailsProps) {
                     <ListItem
                       secondaryAction={
                         <IconButton
+                          aria-label={t('delete')}
                           sx={{ ml: 1 }}
                           onClick={() => {
                             if (

@@ -387,6 +387,7 @@ export default function RuleEditor({
                 </Box>
 
                 <IconButton
+                  aria-label={t('delete')}
                   onClick={() =>
                     setConditions(
                       conditions.filter((_, position) => position !== index)
@@ -451,6 +452,7 @@ export default function RuleEditor({
                     ))}
                   </TextField>
                   <IconButton
+                    aria-label={t('delete')}
                     onClick={() =>
                       setActions(
                         actions.filter((_, position) => position !== index)

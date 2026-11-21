@@ -168,6 +168,7 @@ export default function SingleTask({
           </Tooltip>
           {task.taskBase.taskType === 'METER' && (
             <IconButton
+              aria-label={t('meter')}
               onClick={() =>
                 !preview && navigate(`/app/meters/${task.taskBase.meter.id}`)
               }

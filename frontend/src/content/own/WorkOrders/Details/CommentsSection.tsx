@@ -146,6 +146,7 @@ export default function CommentsSection(props: CommentsSectionProps) {
           alignItems="center"
         >
           <IconButton
+            aria-label={t('add_file')}
             size="small"
             onClick={() => setShowFileUpload(!showFileUpload)}
             color={showFileUpload ? 'primary' : 'default'}

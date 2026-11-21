@@ -218,7 +218,12 @@ const AssetDetails = ({ asset, loading, onCopy }: PropsType) => {
             <Grid container spacing={2} padding={2}>
               {asset?.image && (
                 <Grid item xs={12}>
-                  <img width="auto" height="300px" src={asset.image.url} />
+                  <img
+                    width="auto"
+                    height="300px"
+                    src={asset.image.url}
+                    alt={asset.name}
+                  />
                 </Grid>
               )}
               <Grid item xs={12}>
@@ -239,7 +244,7 @@ const AssetDetails = ({ asset, loading, onCopy }: PropsType) => {
                       />
                     )}
                     {hasCreatePermission(PermissionEntity.ASSETS) && (
-                      <IconButton onClick={onCopy}>
+                      <IconButton aria-label={t('copy')} onClick={onCopy}>
                         <ContentCopyIcon />
                       </IconButton>
                     )}

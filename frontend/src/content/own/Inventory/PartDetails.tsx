@@ -156,12 +156,17 @@ export default function PartDetails(props: PartDetailsProps) {
         </Box>
         <Box>
           {hasEditPermission(PermissionEntity.PARTS_AND_MULTIPARTS, part) && (
-            <IconButton onClick={handleOpenUpdate} style={{ marginRight: 10 }}>
+            <IconButton
+              aria-label={t('edit')}
+              onClick={handleOpenUpdate}
+              style={{ marginRight: 10 }}
+            >
               <EditTwoToneIcon color="primary" />
             </IconButton>
           )}
           {hasCreatePermission(PermissionEntity.PARTS_AND_MULTIPARTS) && (
             <IconButton
+              aria-label={t('copy')}
               style={{ marginRight: 10 }}
               onClick={() => onCopy(part)}
             >
@@ -170,6 +175,7 @@ export default function PartDetails(props: PartDetailsProps) {
           )}
           {hasEditPermission(PermissionEntity.PARTS_AND_MULTIPARTS, part) && (
             <IconButton
+              aria-label={t('restock')}
               style={{ marginRight: 10 }}
               onClick={() => setOpenRestock(true)}
             >
@@ -177,7 +183,7 @@ export default function PartDetails(props: PartDetailsProps) {
             </IconButton>
           )}
           {hasDeletePermission(PermissionEntity.PARTS_AND_MULTIPARTS, part) && (
-            <IconButton onClick={handleOpenDelete}>
+            <IconButton aria-label={t('delete')} onClick={handleOpenDelete}>
               <DeleteTwoToneIcon style={{ cursor: 'pointer' }} color="error" />
             </IconButton>
           )}
@@ -212,6 +218,7 @@ export default function PartDetails(props: PartDetailsProps) {
                 >
                   <img
                     src={part.image.url}
+                    alt={part.name}
                     style={{ borderRadius: 5, height: 250, cursor: 'pointer' }}
                     onClick={() => setIsImageViewerOpen(true)}
                   />

@@ -167,6 +167,7 @@ export default function RequestDetails({
           {!request.cancelled &&
             hasEditPermission(PermissionEntity.REQUESTS, request) && (
               <IconButton
+                aria-label={t('edit')}
                 style={{ marginRight: 10 }}
                 onClick={handleOpenUpdate}
               >
@@ -174,7 +175,7 @@ export default function RequestDetails({
               </IconButton>
             )}
           {hasDeletePermission(PermissionEntity.REQUESTS, request) && (
-            <IconButton onClick={handleOpenDelete}>
+            <IconButton aria-label={t('delete')} onClick={handleOpenDelete}>
               <DeleteTwoToneIcon color="error" />
             </IconButton>
           )}
@@ -291,6 +292,7 @@ export default function RequestDetails({
                 >
                   <img
                     src={request.image.url}
+                    alt={request.title}
                     style={{ borderRadius: 5, height: 250, cursor: 'pointer' }}
                     onClick={() => setIsImageViewerOpen(true)}
                   />

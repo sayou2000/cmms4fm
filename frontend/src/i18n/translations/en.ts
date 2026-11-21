@@ -2102,7 +2102,12 @@ const locale = {
   build_info_label: 'Build',
   build_info_local: 'Local build',
   build_info_mismatch:
-    'Frontend ({{frontend}}) and server ({{server}}) run different builds – the last deploy has not fully gone through.'
+    'Frontend ({{frontend}}) and server ({{server}}) run different builds – the last deploy has not fully gone through.',
+  // Accessible names for icon-only buttons
+  show_password: 'Show password',
+  hide_password: 'Hide password',
+  previous_week: 'Previous week',
+  next_week: 'Next week'
 };
 
 export default locale;

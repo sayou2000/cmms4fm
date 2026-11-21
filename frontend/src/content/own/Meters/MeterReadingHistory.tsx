@@ -99,12 +99,18 @@ export default function MeterReadingHistory({
                 secondaryAction={
                   <Stack spacing={1} direction="row">
                     {hasEditPermission(PermissionEntity.METERS, meter) && (
-                      <IconButton onClick={() => setEditingReading(reading)}>
+                      <IconButton
+                        aria-label={t('edit')}
+                        onClick={() => setEditingReading(reading)}
+                      >
                         <EditTwoToneIcon color={'primary'} />
                       </IconButton>
                     )}
                     {hasDeletePermission(PermissionEntity.METERS, meter) && (
-                      <IconButton onClick={() => setDeletingReading(reading)}>
+                      <IconButton
+                        aria-label={t('delete')}
+                        onClick={() => setDeletingReading(reading)}
+                      >
                         <DeleteTwoToneIcon color="error" />
                       </IconButton>
                     )}

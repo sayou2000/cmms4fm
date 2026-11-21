@@ -667,7 +667,11 @@ function Meters() {
             >
               <SearchInput onChange={debouncedQueryChange} />
               <Stack direction={'row'} alignItems="center" spacing={1}>
-                <IconButton onClick={handleOpenMenu} color="primary">
+                <IconButton
+                  aria-label={t('actions')}
+                  onClick={handleOpenMenu}
+                  color="primary"
+                >
                   <MoreVertTwoToneIcon />
                 </IconButton>
                 {hasCreatePermission(PermissionEntity.METERS) && (

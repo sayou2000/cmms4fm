@@ -555,12 +555,17 @@ export default function WorkOrderDetails(props: WorkOrderDetailsProps) {
         </Box>
         <Box>
           {hasEditPermission(PermissionEntity.WORK_ORDERS, workOrder) && (
-            <IconButton style={{ marginRight: 10 }} onClick={handleOpenMenu}>
+            <IconButton
+              aria-label={t('actions')}
+              style={{ marginRight: 10 }}
+              onClick={handleOpenMenu}
+            >
               <MoreVertTwoToneIcon />
             </IconButton>
           )}
           {hasEditPermission(PermissionEntity.WORK_ORDERS, workOrder) && (
             <IconButton
+              aria-label={t('edit')}
               onClick={() => onEdit(workOrder.id)}
               style={{ marginRight: 10 }}
             >
@@ -568,7 +573,7 @@ export default function WorkOrderDetails(props: WorkOrderDetailsProps) {
             </IconButton>
           )}
           {hasDeletePermission(PermissionEntity.WORK_ORDERS, workOrder) && (
-            <IconButton>
+            <IconButton aria-label={t('delete')}>
               <DeleteTwoToneIcon
                 color="error"
                 onClick={() => onDelete(workOrder.id)}
@@ -726,6 +731,7 @@ export default function WorkOrderDetails(props: WorkOrderDetailsProps) {
                 >
                   <img
                     src={workOrder.image.url}
+                    alt={workOrder.title}
                     style={{ borderRadius: 5, height: 250, cursor: 'pointer' }}
                     onClick={() => {
                       setImageState([workOrder.image.url], workOrder.image.url);
@@ -835,6 +841,7 @@ export default function WorkOrderDetails(props: WorkOrderDetailsProps) {
                       </Typography>
                       <img
                         src={workOrder.signature}
+                        alt={t('signature')}
                         style={{
                           borderRadius: 5,
                           height: 100,
@@ -898,13 +905,17 @@ export default function WorkOrderDetails(props: WorkOrderDetailsProps) {
                         <CircularProgress size="1rem" />
                       ) : (
                         <IconButton
+                          aria-label={t('save')}
                           disabled={savingPrimaryTime}
                           onClick={onSavePrimaryTime}
                         >
                           <CheckTwoToneIcon color={'primary'} />
                         </IconButton>
                       )}
-                      <IconButton onClick={() => setOpenEditPrimaryTime(false)}>
+                      <IconButton
+                        aria-label={t('cancel')}
+                        onClick={() => setOpenEditPrimaryTime(false)}
+                      >
                         <CloseIcon color={'error'} />
                       </IconButton>
                     </Stack>
@@ -1074,6 +1085,7 @@ export default function WorkOrderDetails(props: WorkOrderDetailsProps) {
                                     }}
                                   >
                                     <IconButton
+                                      aria-label={t('delete')}
                                       sx={{ ml: 1 }}
                                       onClick={() =>
                                         dispatch(

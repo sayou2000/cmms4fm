@@ -1287,8 +1287,8 @@ const deJSON = {
   to_group: 'Gruppieren',
   see_children: 'Kinder sehen',
   hide_children: 'Kinder verstecken',
-  expand: 'Erweitern',
-  collapse: 'Zusammenbrechen',
+  expand: 'Ausklappen',
+  collapse: 'Einklappen',
   detail_panel_toggle: 'Detailbereich umschalten',
   cancel_subscription: 'Abonnement kündigen',
   resume_subscription: 'Abonnement fortsetzen',
@@ -2237,7 +2237,12 @@ const deJSON = {
   build_info_label: 'Stand',
   build_info_local: 'Lokaler Build',
   build_info_mismatch:
-    'Frontend ({{frontend}}) und Server ({{server}}) laufen auf unterschiedlichen Ständen – der letzte Deploy ist nicht vollständig durch.'
+    'Frontend ({{frontend}}) und Server ({{server}}) laufen auf unterschiedlichen Ständen – der letzte Deploy ist nicht vollständig durch.',
+  // Accessible names for icon-only buttons
+  show_password: 'Passwort anzeigen',
+  hide_password: 'Passwort verbergen',
+  previous_week: 'Vorherige Woche',
+  next_week: 'Nächste Woche'
 };
 
 export default deJSON;

@@ -93,6 +93,7 @@ function BulkActions(props: BulkActionsProps) {
           )}
         </Box>
         <IconButton
+          aria-label={t('actions')}
           color="primary"
           onClick={openMenu}
           ref={moreRef}

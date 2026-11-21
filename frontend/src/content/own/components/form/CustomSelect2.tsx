@@ -293,6 +293,7 @@ export const CustomSelect = ({
                   ) && (
                     <InputAdornment position="end">
                       <IconButton
+                        aria-label={t('add')}
                         size="small"
                         onClick={(e) => {
                           e.stopPropagation();
@@ -453,6 +454,7 @@ export const CustomSelect = ({
                   endAdornment: (
                     <InputAdornment position="end">
                       <IconButton
+                        aria-label={t('search')}
                         size="small"
                         onClick={(e) => {
                           e.stopPropagation();
@@ -629,6 +631,7 @@ export const CustomSelect = ({
                   endAdornment: (
                     <InputAdornment position="end">
                       <IconButton
+                        aria-label={t('search')}
                         size="small"
                         onClick={(e) => {
                           e.stopPropagation();
@@ -825,6 +828,7 @@ export const CustomSelect = ({
                         <CircularProgress size="1rem" />
                       ) : (
                         <IconButton
+                          aria-label={t('add')}
                           size="small"
                           onClick={(e) => {
                             e.stopPropagation();
@@ -1026,7 +1030,7 @@ export const CustomSelect = ({
                   {t('assign_tasks_description')}
                 </Typography>
               </Box>
-              <IconButton>
+              <IconButton aria-label={t(fieldValue?.length ? 'edit' : 'add')}>
                 {fieldValue?.length ? (
                   <EditTwoToneIcon color="primary" />
                 ) : (

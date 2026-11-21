@@ -65,6 +65,7 @@ export default function PartQuantitiesList({
               </Typography>
               {!(disabled || deleteDisabled) && (
                 <IconButton
+                  aria-label={t('delete')}
                   size="small"
                   onClick={() => {
                     if (onDelete) {

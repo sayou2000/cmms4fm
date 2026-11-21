@@ -437,6 +437,8 @@ function Locations() {
 
         return (
           <IconButton
+            aria-label={t(isExpanded ? 'collapse' : 'expand')}
+            aria-expanded={isExpanded}
             size="small"
             onClick={(e) => {
               e.stopPropagation();
@@ -586,6 +588,7 @@ function Locations() {
         if (hasEditPermission(PermissionEntity.LOCATIONS, location)) {
           actions.push(
             <IconButton
+              aria-label={t('edit')}
               key="edit"
               size="small"
               onClick={(e) => {
@@ -608,6 +611,7 @@ function Locations() {
         if (hasDeletePermission(PermissionEntity.LOCATIONS, location)) {
           actions.push(
             <IconButton
+              aria-label={t('delete')}
               key="delete"
               size="small"
               onClick={(e) => {
@@ -1097,10 +1101,18 @@ function Locations() {
             )}
             <Stack direction={'row'} alignItems="center" spacing={1}>
               <SearchInput onChange={debouncedQueryChange} />
-              <IconButton onClick={() => handleReset(true)} color="primary">
+              <IconButton
+                aria-label={t('reset')}
+                onClick={() => handleReset(true)}
+                color="primary"
+              >
                 <ReplayTwoToneIcon />
               </IconButton>
-              <IconButton onClick={handleOpenMenu} color="primary">
+              <IconButton
+                aria-label={t('actions')}
+                onClick={handleOpenMenu}
+                color="primary"
+              >
                 <MoreVertTwoToneIcon />
               </IconButton>
               {hasCreatePermission(PermissionEntity.LOCATIONS) && (

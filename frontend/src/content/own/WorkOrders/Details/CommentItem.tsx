@@ -234,13 +234,18 @@ export default function CommentItem(props: CommentItemProps) {
                 {!isSystem && isOwner && !isEditing && (
                   <Box className="comment-actions" sx={{ opacity: 0 }}>
                     <IconButton
+                      aria-label={t('edit')}
                       size="small"
                       onClick={() => setIsEditing(true)}
                       sx={{ mr: 0.5 }}
                     >
                       <EditTwoToneIcon fontSize="small" color="primary" />
                     </IconButton>
-                    <IconButton size="small" onClick={handleDelete}>
+                    <IconButton
+                      aria-label={t('delete')}
+                      size="small"
+                      onClick={handleDelete}
+                    >
                       <DeleteTwoToneIcon fontSize="small" color="error" />
                     </IconButton>
                   </Box>
@@ -355,6 +360,7 @@ export default function CommentItem(props: CommentItemProps) {
                             {file.name}
                           </Typography>
                           <IconButton
+                            aria-label={t('download')}
                             size="small"
                             component="a"
                             href={file.url}

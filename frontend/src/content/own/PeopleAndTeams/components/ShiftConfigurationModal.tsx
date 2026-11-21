@@ -406,6 +406,7 @@ function ShiftConfigurationModal({ user, open, onClose, onSave }: PropsType) {
               sx={{ mb: 2 }}
             >
               <IconButton
+                aria-label={t('previous_week')}
                 onClick={() => setWeekStart((prev) => subWeeks(prev, 1))}
               >
                 <ArrowBackIosNewIcon />
@@ -418,6 +419,7 @@ function ShiftConfigurationModal({ user, open, onClose, onSave }: PropsType) {
                 {getFormattedDate(weekDays[6].toISOString(), true)}
               </Typography>
               <IconButton
+                aria-label={t('next_week')}
                 onClick={() => setWeekStart((prev) => addWeeks(prev, 1))}
               >
                 <ArrowForwardIosIcon />

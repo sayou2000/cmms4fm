@@ -86,6 +86,21 @@ const calendarLocaleLoaders: Record<string, () => Promise<LocaleSingularArg>> =
     ja: () => import('@fullcalendar/core/locales/ja').then((m) => m.default)
   };
 
+// ─── Keep <html lang> in step with the UI language ───────────────────────────
+// index.html ships lang="en"; without this, screen readers read a German UI
+// with an English voice and the browser's hyphenation and spell check follow
+// the wrong language. Registered before init so the detected language counts.
+// The app's own codes are not all BCP 47: 'ba' is Bosnian here (BCP 47 'bs';
+// 'ba' would be Bashkir), and the regional ones use an underscore.
+const htmlLangByAppLang: Record<string, string> = {
+  pt_br: 'pt-BR',
+  zh_cn: 'zh-CN',
+  ba: 'bs'
+};
+i18n.on('languageChanged', (lng) => {
+  document.documentElement.lang = htmlLangByAppLang[lng] ?? lng;
+});
+
 // ─── i18n init (no resources bundled upfront) ────────────────────────────────
 i18n
   .use(LanguageDetector)

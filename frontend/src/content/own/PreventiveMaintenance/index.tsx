@@ -843,7 +843,11 @@ function PMs() {
           paddingX={4}
         >
           <Stack direction={'row'} alignSelf={'flex-end'} spacing={1} mt={1}>
-            <IconButton onClick={handleOpenMenu} color="primary">
+            <IconButton
+              aria-label={t('actions')}
+              onClick={handleOpenMenu}
+              color="primary"
+            >
               <MoreVertTwoToneIcon />
             </IconButton>
             {hasCreatePermission(PermissionEntity.PREVENTIVE_MAINTENANCES) && (

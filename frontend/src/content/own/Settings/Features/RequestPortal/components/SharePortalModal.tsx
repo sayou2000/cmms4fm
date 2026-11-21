@@ -88,7 +88,9 @@ export default function SharePortalModal({
             </style>
           </head>
           <body>
-            <img src="data:image/svg+xml;base64,${btoa(svgData)}" />
+            <img alt="QR code" src="data:image/svg+xml;base64,${btoa(
+              svgData
+            )}" />
           </body>
         </html>
       `);
@@ -124,7 +126,7 @@ export default function SharePortalModal({
         <Typography variant="h5" fontWeight={700}>
           {t('share_portal')}
         </Typography>
-        <IconButton onClick={onClose} size="small">
+        <IconButton aria-label={t('close')} onClick={onClose} size="small">
           <CloseIcon />
         </IconButton>
       </DialogTitle>

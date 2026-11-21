@@ -76,9 +76,13 @@ function Header() {
         alignItems="center"
         spacing={2}
       >
-        <IconButton onClick={()=>navigate(-1)} disabled={location.key==='default'}>
-          <ArrowBackTwoToneIcon/>
-          </IconButton>
+        <IconButton
+          aria-label={t('go_back')}
+          onClick={() => navigate(-1)}
+          disabled={location.key === 'default'}
+        >
+          <ArrowBackTwoToneIcon />
+        </IconButton>
         <Typography variant="h2" sx={{ fontSize: 22 }}>
           {title}
         </Typography>

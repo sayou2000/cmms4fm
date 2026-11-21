@@ -189,12 +189,17 @@ export default function MeterDetails(props: MeterDetailsProps) {
         </Box>
         <Box>
           {hasEditPermission(PermissionEntity.METERS, meter) && (
-            <IconButton onClick={handleOpenUpdate} style={{ marginRight: 10 }}>
+            <IconButton
+              aria-label={t('edit')}
+              onClick={handleOpenUpdate}
+              style={{ marginRight: 10 }}
+            >
               <EditTwoToneIcon color="primary" />
             </IconButton>
           )}
           {hasCreatePermission(PermissionEntity.METERS) && (
             <IconButton
+              aria-label={t('copy')}
               style={{ marginRight: 10 }}
               onClick={() => onCopy(meter)}
             >
@@ -202,7 +207,7 @@ export default function MeterDetails(props: MeterDetailsProps) {
             </IconButton>
           )}
           {hasDeletePermission(PermissionEntity.METERS, meter) && (
-            <IconButton onClick={handleOpenDelete}>
+            <IconButton aria-label={t('delete')} onClick={handleOpenDelete}>
               <DeleteTwoToneIcon color="error" />
             </IconButton>
           )}
@@ -298,6 +303,7 @@ export default function MeterDetails(props: MeterDetailsProps) {
               >
                 <img
                   src={meter.image.url}
+                  alt={meter.name}
                   style={{ borderRadius: 5, height: 250, cursor: 'pointer' }}
                   onClick={() => setIsImageViewerOpen(true)}
                 />

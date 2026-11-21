@@ -57,12 +57,16 @@ export default function SetDetails(props: PartDetailsProps) {
         </Box>
         <Box>
           {hasEditPermission(PermissionEntity.PARTS_AND_MULTIPARTS, set) && (
-            <IconButton onClick={handleOpenUpdate} style={{ marginRight: 10 }}>
+            <IconButton
+              aria-label={t('edit')}
+              onClick={handleOpenUpdate}
+              style={{ marginRight: 10 }}
+            >
               <EditTwoToneIcon color="primary" />
             </IconButton>
           )}
           {hasDeletePermission(PermissionEntity.PARTS_AND_MULTIPARTS, set) && (
-            <IconButton onClick={handleOpenDelete}>
+            <IconButton aria-label={t('delete')} onClick={handleOpenDelete}>
               <DeleteTwoToneIcon color="error" />
             </IconButton>
           )}

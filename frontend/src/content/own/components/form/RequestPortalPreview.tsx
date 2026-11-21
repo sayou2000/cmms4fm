@@ -271,6 +271,7 @@ export function AssetLocationClause({
                 <>
                   <InputAdornment position="end">
                     <IconButton
+                      aria-label={t('search')}
                       sx={{ display: { xs: 'none', md: 'block' } }}
                       style={{ marginRight: 10 }}
                       size="small"

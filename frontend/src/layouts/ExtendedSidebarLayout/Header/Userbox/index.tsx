@@ -476,6 +476,7 @@ function HeaderUserbox() {
             {t('get_mobile_app')}
           </Typography>
           <IconButton
+            aria-label={t('close')}
             onClick={handleCloseQrDialog}
             size="small"
             sx={{

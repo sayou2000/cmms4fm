@@ -406,7 +406,10 @@ function WorkloadView({ handleOpenDetails }: WorkloadViewProps) {
             sx={{ mb: 2 }}
           >
             <Stack direction="row" alignItems="center" spacing={1}>
-              <IconButton onClick={handlePrevWeek}>
+              <IconButton
+                aria-label={t('previous_week')}
+                onClick={handlePrevWeek}
+              >
                 <ArrowBackTwoToneIcon />
               </IconButton>
               <Button
@@ -417,7 +420,7 @@ function WorkloadView({ handleOpenDetails }: WorkloadViewProps) {
               >
                 {t('this_week')}
               </Button>
-              <IconButton onClick={handleNextWeek}>
+              <IconButton aria-label={t('next_week')} onClick={handleNextWeek}>
                 <ArrowForwardTwoToneIcon />
               </IconButton>
               <Typography variant="h6" sx={{ ml: 1 }}>
@@ -666,6 +669,7 @@ function WorkloadView({ handleOpenDetails }: WorkloadViewProps) {
                             ''}
                         </Typography>
                         <IconButton
+                          aria-label={t('edit')}
                           className="shift-config-btn"
                           size="small"
                           onClick={() =>

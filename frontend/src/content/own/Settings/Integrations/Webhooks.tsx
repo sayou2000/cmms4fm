@@ -232,6 +232,7 @@ function Webhooks() {
         return (
           <Stack direction="row" spacing={0.5} alignItems="center">
             <IconButton
+              aria-label={t('copy')}
               size="small"
               onClick={(e) => {
                 e.stopPropagation();
@@ -261,6 +262,7 @@ function Webhooks() {
       header: t('actions'),
       cell: (info) => (
         <IconButton
+          aria-label={t('delete')}
           color="error"
           onClick={() => handleOpenDeleteDialog(info.row.original)}
         >
@@ -310,7 +312,10 @@ function Webhooks() {
             alignItems="center"
           >
             <Typography variant="h4">{t('create_webhook_endpoint')}</Typography>
-            <IconButton onClick={handleCloseCreateModal}>
+            <IconButton
+              aria-label={t('close')}
+              onClick={handleCloseCreateModal}
+            >
               <CloseIcon />
             </IconButton>
           </Box>
