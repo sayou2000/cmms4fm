@@ -10,6 +10,7 @@ import com.grash.dto.RequestPatchDTO;
 import com.grash.dto.RequestPostDTO;
 import com.grash.dto.RequestShowDTO;
 import com.grash.dto.license.LicenseEntitlement;
+import com.grash.dto.workOrder.WorkOrderPostDTO;
 import com.grash.exception.CustomException;
 import com.grash.factory.MailServiceFactory;
 import com.grash.mapper.RequestMapper;
@@ -83,6 +84,8 @@ class RequestServiceTest {
     private RequestPortalService requestPortalService;
     @Mock
     private TenantAspect tenantAspect;
+    @Mock
+    private LocationFilterService locationFilterService;
     @Mock
     private WorkflowService workflowService;
     /**
@@ -600,6 +603,40 @@ class RequestServiceTest {
                     () -> requestService.approve(1L, new RequestApproveDTO(), user));
 
             assertEquals(HttpStatus.NOT_ACCEPTABLE, ex.getHttpStatus());
+        }
+
+        @Test
+        void approveFromWorkflow_doesNotReTriggerWorkflows() {
+            Request saved = buildRequest(1L);
+            when(requestRepository.findById(1L)).thenReturn(Optional.of(saved));
+            when(workOrderService.getWorkOrderFromWorkOrderBase(saved)).thenReturn(new WorkOrderPostDTO());
+            WorkOrder created = new WorkOrder();
+            created.setId(42L);
+            when(workOrderService.create(any(), eq(company))).thenReturn(created);
+            // Fork: no notification/mail stubs. Those run in RequestFanout after commit, so
+            // approve only announces the event (docs/domaenen-events.md).
+
+            WorkOrder result = requestService.approveFromWorkflow(1L, new RequestApproveDTO(), user);
+
+            assertEquals(created, result);
+            verify(workflowService, never()).findByMainConditionAndCompany(any(), any());
+            verify(semanticEventPublisher).publish(ChangeType.APPROVED, EntityType.REQUEST, 1L,
+                    company.getId(), user.getId());
+        }
+
+        @Test
+        void approveFromWorkflow_alreadyApproved_returnsExistingWorkOrder() {
+            WorkOrder existing = new WorkOrder();
+            existing.setId(99L);
+            Request saved = buildRequest(1L);
+            saved.setWorkOrder(existing);
+            when(requestRepository.findById(1L)).thenReturn(Optional.of(saved));
+
+            WorkOrder result = requestService.approveFromWorkflow(1L, new RequestApproveDTO(), user);
+
+            assertEquals(existing, result);
+            verify(workflowService, never()).findByMainConditionAndCompany(any(), any());
+            verify(workOrderService, never()).create(any(), any());
         }
     }
 

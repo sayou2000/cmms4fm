@@ -1,15 +1,19 @@
 package com.grash.service;
 
+import com.grash.dto.RequestApproveDTO;
 import com.grash.dto.WorkflowPatchDTO;
 import com.grash.exception.CustomException;
 import com.grash.mapper.WorkflowMapper;
 import com.grash.model.*;
 import com.grash.model.enums.ApprovalStatus;
+import com.grash.model.enums.AssetStatus;
 import com.grash.model.enums.workflow.WFMainCondition;
 import com.grash.repository.*;
 import com.grash.utils.AuditComparator;
 import com.grash.utils.Sanitizer;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -32,6 +36,13 @@ public class WorkflowService {
     private final RequestRepository requestRepository;
     private final AssetRepository assetRepository;
     private final PurchaseOrderRepository purchaseOrderRepository;
+    private RequestService requestService;
+    private final UserRepository userRepository;
+
+    @Autowired
+    public void setRequestService(@Lazy RequestService requestService) {
+        this.requestService = requestService;
+    }
 
     public Workflow create(Workflow Workflow) {
         Sanitizer.sanitizeWorkflow(Workflow);
@@ -173,6 +184,15 @@ public class WorkflowService {
                     break;
                 case ASSIGN_PRIORITY:
                     request.setPriority(action.getPriority());
+                    break;
+                case APPROVE:
+                    Optional<User> companyOwner = userRepository.findCompanyOwner(workflow.getCompany().getId());
+                    if (companyOwner.isEmpty()) {
+                        break;
+                    }
+                    RequestApproveDTO approveDTO = new RequestApproveDTO();
+                    approveDTO.setAssetStatus(AssetStatus.DOWN);
+                    requestService.approveFromWorkflow(request.getId(), approveDTO, companyOwner.get());
                     break;
                 default:
                     break;

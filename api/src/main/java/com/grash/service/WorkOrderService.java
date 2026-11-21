@@ -103,6 +103,7 @@ public class WorkOrderService {
     private final IntercomService intercomService;
     private final ReviewEligibilityService reviewEligibilityService;
     private final BrandingService brandingService;
+    private final LocationFilterService locationFilterService;
     private final WorkOrderHistoryService workOrderHistoryService;
     private final SpringTemplateEngine thymeleafTemplateEngine;
     private final StorageServiceFactory storageServiceFactory;
@@ -380,6 +381,7 @@ public class WorkOrderService {
     }
 
     public Page<WorkOrder> findBySearchCriteria(SearchCriteria searchCriteria) {
+        locationFilterService.expandLocationFilters(searchCriteria);
         SpecificationBuilder<WorkOrder> builder = new SpecificationBuilder<>();
         searchCriteria.getFilterFields().forEach(builder::with);
         Pageable page = PageRequest.of(searchCriteria.getPageNum(), searchCriteria.getPageSize(),
@@ -407,6 +409,10 @@ public class WorkOrderService {
      * of its own.
      */
     public Page<WorkOrder> findForExport(SearchCriteria searchCriteria, int pageNum, int pageSize) {
+        // The list widens a location filter to the location's whole subtree (upstream, 2026-11);
+        // without the same step here the export would hold fewer rows than the list it was made
+        // from. Idempotent - a subtree's subtree is itself - so calling it once per page is safe.
+        locationFilterService.expandLocationFilters(searchCriteria);
         SpecificationBuilder<WorkOrder> builder = new SpecificationBuilder<>();
         searchCriteria.getFilterFields().forEach(builder::with);
         return workOrderRepository.findAll(builder.build(),
@@ -414,6 +420,7 @@ public class WorkOrderService {
     }
 
     public Page<WorkOrder> findBySearchCriteriaWithEntityGraph(SearchCriteria searchCriteria) {
+        locationFilterService.expandLocationFilters(searchCriteria);
         SpecificationBuilder<WorkOrder> builder = new SpecificationBuilder<>();
         searchCriteria.getFilterFields().forEach(builder::with);
         Pageable page = PageRequest.of(searchCriteria.getPageNum(), searchCriteria.getPageSize(),

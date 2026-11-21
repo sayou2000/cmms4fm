@@ -62,13 +62,18 @@ import {
   SearchCriteria,
   SortDirection
 } from '../../../models/owns/page';
-import { loadFilterFields, saveFilterFields } from '../../../utils/filter';
+import {
+  loadFilterFields,
+  normalizeFields,
+  saveFilterFields
+} from '../../../utils/filter';
 import { createColumnHelper } from '@tanstack/react-table';
 import useTableState from '../../../hooks/useTableState';
 import _ from 'lodash';
 import FilterAltTwoToneIcon from '@mui/icons-material/FilterAltTwoTone';
 import CompanyFilter from '../WorkOrders/Filters/CompanyFilter';
 import EnumFilter from '../WorkOrders/Filters/EnumFilter';
+import MoreFilters from '../WorkOrders/Filters/MoreFilters';
 import BusinessTwoToneIcon from '@mui/icons-material/BusinessTwoTone';
 import SignalCellularAltTwoToneIcon from '@mui/icons-material/SignalCellularAltTwoTone';
 import CircleTwoToneIcon from '@mui/icons-material/CircleTwoTone';
@@ -111,6 +116,7 @@ function Requests() {
   const [isFormDirty, setIsFormDirty] = useState<boolean>(false);
   const [openUpdateModal, setOpenUpdateModal] = useState<boolean>(false);
   const [openDrawer, setOpenDrawer] = useState<boolean>(false);
+  const [openFilterDrawer, setOpenFilterDrawer] = useState<boolean>(false);
   const {
     companySettings,
     hasViewPermission,
@@ -281,6 +287,7 @@ function Requests() {
       }
     }
   };
+  const handleCloseFilterDrawer = () => setOpenFilterDrawer(false);
   const handleCloseDetails = () => {
     window.history.replaceState(null, 'Request', `/app/requests`);
     setOpenDrawer(false);
@@ -349,7 +356,7 @@ function Requests() {
       cell: (info) => info.getValue() || '',
       size: 150
     }),
-    columnHelper.accessor((row) => row.asset?.name, {
+    columnHelper.accessor((row) => row.location?.name, {
       id: 'location',
       header: () => t('location'),
       cell: (info) => info.getValue() || '',
@@ -695,6 +702,22 @@ function Requests() {
               justifyContent={'flex-start'}
               width={'95%'}
             >
+              <Button
+                onClick={() => setOpenFilterDrawer(true)}
+                sx={{
+                  '& .MuiButton-startIcon': { margin: '0px' },
+                  minWidth: 0
+                }}
+                variant={
+                  _.isEqual(
+                    normalizeFields(criteria.filterFields),
+                    normalizeFields(DEFAULT_FILTER_FIELDS)
+                  )
+                    ? 'outlined'
+                    : 'contained'
+                }
+                startIcon={<FilterAltTwoToneIcon />}
+              />
               <EnumFilter
                 filterFields={criteria.filterFields}
                 onChange={onFilterChange}
@@ -761,6 +784,25 @@ function Requests() {
             request={currentRequest}
             handleOpenUpdate={handleOpenUpdate}
             handleOpenDelete={() => setOpenDelete(true)}
+          />
+        </Drawer>
+        <Drawer
+          anchor="left"
+          open={openFilterDrawer}
+          onClose={handleCloseFilterDrawer}
+          PaperProps={{
+            sx: { width: '30%' }
+          }}
+        >
+          <MoreFilters
+            entity="request"
+            filterFields={criteria.filterFields}
+            onFilterChange={onFilterChange}
+            onClose={handleCloseFilterDrawer}
+            onReset={() => {
+              onFilterChange(DEFAULT_FILTER_FIELDS);
+              handleCloseFilterDrawer();
+            }}
           />
         </Drawer>
         <ConfirmDialog

@@ -83,7 +83,11 @@ import {
   QueryPath,
   SearchCriteria
 } from '../../../models/owns/page';
-import { loadFilterFields, saveFilterFields } from '../../../utils/filter';
+import {
+  loadFilterFields,
+  normalizeFields,
+  saveFilterFields
+} from '../../../utils/filter';
 import WorkOrderCalendar from './Calendar';
 import WorkloadView from './WorkloadView';
 import MoreVertTwoToneIcon from '@mui/icons-material/MoreVertTwoTone';
@@ -151,11 +155,6 @@ const INITIALLY_HIDDEN_COLUMNS = {
   archived: false,
   feedback: false
 };
-const normalizeFields = (fields: FilterField[]) =>
-  [...fields]
-    .sort((a, b) => a.field.localeCompare(b.field))
-    .map((f) => ({ ...f, values: f.values ? [...f.values].sort() : f.values }));
-
 const FILTERS_STORAGE_KEY = 'workOrder_filters';
 const DEFAULT_FILTER_FIELDS: FilterField[] = [
   { field: 'archived', operation: 'eq', value: false },

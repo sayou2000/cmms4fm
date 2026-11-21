@@ -1,4 +1,4 @@
-FROM nginx:1.27-alpine
+FROM nginx:1.31.9-alpine
 
 # The reverse proxy config is baked into the image rather than bind-mounted.
 # Coolify rewrites relative compose mounts to /data/coolify/applications/<uuid>/

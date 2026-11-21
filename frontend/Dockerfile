@@ -19,7 +19,7 @@ COPY . .
 # keeps a constrained builder from being the thing that fails.
 RUN NODE_OPTIONS="--max-old-space-size=4096" npm run build
 
-FROM nginx:1.27.0-alpine
+FROM nginx:1.31.9-alpine
 COPY --from=build /usr/src/app/build /usr/share/nginx/html
 COPY --from=build /usr/src/app/.env.example /usr/share/nginx/html/.env
 COPY --from=build /usr/src/app/nginx-custom.conf /etc/nginx/conf.d/default.conf
