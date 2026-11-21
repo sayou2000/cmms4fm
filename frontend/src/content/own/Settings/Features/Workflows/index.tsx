@@ -949,7 +949,10 @@ function Workflows() {
             ) : null}
           </Box>
         </Box>
-        <IconButton onClick={() => onRemoveCondition(index)}>
+        <IconButton
+          aria-label={t('delete')}
+          onClick={() => onRemoveCondition(index)}
+        >
           <DeleteTwoToneIcon color={'error'} />
         </IconButton>
       </Stack>

@@ -206,6 +206,8 @@ const SelectAssetModal: React.FC<SelectAssetModalProps> = ({
 
         return (
           <IconButton
+            aria-label={t(isExpanded ? 'collapse' : 'expand')}
+            aria-expanded={isExpanded}
             size="small"
             onClick={(e) => {
               e.stopPropagation();
@@ -317,6 +319,7 @@ const SelectAssetModal: React.FC<SelectAssetModalProps> = ({
       >
         <Typography variant="h4">{t('select_asset')}</Typography>
         <IconButton
+          aria-label={t('reset')}
           onClick={() => handleReset(true)}
           color="primary"
           size="small"

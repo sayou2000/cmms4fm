@@ -214,6 +214,8 @@ const SelectLocationModal: React.FC<SelectLocationModalProps> = ({
 
         return (
           <IconButton
+            aria-label={t(isExpanded ? 'collapse' : 'expand')}
+            aria-expanded={isExpanded}
             size="small"
             onClick={(e) => {
               e.stopPropagation();
@@ -319,6 +321,7 @@ const SelectLocationModal: React.FC<SelectLocationModalProps> = ({
       >
         <Typography variant="h4">{t('select_location')}</Typography>
         <IconButton
+          aria-label={t('reset')}
           onClick={() => handleReset(true)}
           color="primary"
           size="small"
