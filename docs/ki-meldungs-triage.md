@@ -59,6 +59,13 @@ zur Laufzeit berechneten Wert entgegen, und es gibt keinen Weg, ihm einen zu üb
 ohnehin gebraucht wurde, liegt er dort, wo auch die Entscheidung protokolliert werden kann —
 in `RequestQualificationService`.
 
+Seit dem Upstream-Sync vom 2026-11-21 kennt der Engine zusätzlich die Aktion `APPROVE`: Er
+gibt die Meldung frei und legt den Arbeitsauftrag an, als Firmeninhaber und mit dem
+Anlagenstatus fest auf `DOWN`. Das ändert am Argument oben nichts — auch `APPROVE` führt nur
+aus, was beim Anlegen der Regel festgelegt wurde, und nimmt keinen Triage-Vorschlag entgegen.
+Wichtig ist es trotzdem: Eine Regel mit `APPROVE` auf `REQUEST_CREATED` gibt eine Meldung frei,
+bevor jemand den Vorschlag der Qualifizierungskarte gesehen hat.
+
 **Der Event-Hook existiert, aber nicht an der Grenze, die zählt.** `REQUEST_CREATED` gibt es als
 `WFMainCondition`, und `onRequestCreation` im Controller ist der richtige Ort. Aber der
 Controller ist `@Transactional`: die Meldung ist dort noch nicht committed. Ein asynchroner Job,
